@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kraken Agent</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <aside class="sidebar">
+        <div class="sidebar-card brand-card">
+          <p class="eyebrow">Express Agent Runtime</p>
+          <h1 id="app-title">Kraken Agent</h1>
+          <p id="status-text" class="status-text">Checking configuration...</p>
+          <button id="new-chat-button" class="ghost-button" type="button">New chat</button>
+        </div>
+
+        <div class="sidebar-card">
+          <div class="section-heading">
+            <h2>Sessions</h2>
+            <button id="refresh-button" class="icon-button" type="button" aria-label="Refresh sessions">Refresh</button>
+          </div>
+          <div id="session-list" class="session-list"></div>
+        </div>
+
+        <div class="sidebar-card">
+          <div class="section-heading">
+            <h2>Instructions</h2>
+            <button id="save-prompt-button" class="icon-button" type="button">Save</button>
+          </div>
+          <textarea
+            id="system-prompt-input"
+            class="system-prompt-input"
+            placeholder="Set agent instructions for this session"
+          ></textarea>
+          <p class="field-hint">Saved per session and used by the multi-step tool loop.</p>
+        </div>
+      </aside>
+
+      <main class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Heavy Agent Console</p>
+            <h2 id="chat-title">New chat</h2>
+          </div>
+          <div class="header-meta">
+            <span id="model-pill" class="model-pill">Model</span>
+            <span id="session-meta" class="session-meta">No session yet</span>
+          </div>
+        </header>
+
+        <section id="message-list" class="message-list" aria-live="polite"></section>
+
+        <div id="error-banner" class="error-banner" hidden></div>
+
+        <form id="composer-form" class="composer" autocomplete="off">
+          <label class="composer-label" for="message-input">Message</label>
+          <textarea
+            id="message-input"
+            class="message-input"
+            rows="4"
+            placeholder="Ask the agent to inspect code, generate text, or help with a task"
+          ></textarea>
+          <div class="composer-actions">
+            <p class="field-hint">Press Cmd/Ctrl + Enter to send.</p>
+            <button id="send-button" class="send-button" type="submit">Send</button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="message-meta"></div>
+        <div class="message-body"></div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

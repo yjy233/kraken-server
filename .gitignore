@@ -6,6 +6,10 @@ dist/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+out/
+target/
+Release/
+Debug/
 
 # Logs
 *.log
@@ -32,3 +36,12 @@ pnpm-debug.log*
 *.swp
 *.swo
 *~
+
+# Runtime data
+.sessions/
+
+node_modules/
+.env
+.sessions/
+dist/
+coverage/
