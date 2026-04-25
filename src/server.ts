@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import type { AgentMessage } from './agent/types.js'
 import { ReActAgent } from './agent/react-agent.js'
+import { PromptBuilder } from './agent/prompt-builder.js'
 import { createToolRegistry } from './tools/registry.js'
 import {
   parseInteger,
@@ -45,13 +46,15 @@ const PORT = parseInteger(process.env.PORT, 3011)
 const APP_TITLE = process.env.APP_TITLE || 'Kraken Agent'
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || process.env.DEFAULT_MODEL || 'anthropic/claude-sonnet-4'
 const MAX_TOKENS = parseInteger(process.env.MAX_TOKENS, 2048)
-const DEFAULT_SYSTEM_PROMPT = process.env.DEFAULT_SYSTEM_PROMPT ||
-  [
-    'You are Kraken Agent, a pragmatic engineering agent.',
-    'Work in iterations. Think about whether a local tool should be used before you answer.',
-    'Use the available tools when they materially improve accuracy.',
-    'When you use a tool, incorporate the result into a direct final answer.',
-  ].join(' ')
+const BASE_SYSTEM_PROMPT = `You are Kraken Agent, an all-purpose AI assistant.
+
+Before answering, think step by step:
+1. Understand the user's intent and the core problem.
+2. Determine whether a tool can help (search, file operations, code execution, etc.).
+3. If a tool is needed, plan the sequence of calls and reason about the expected outcome of each step.
+4. After gathering all necessary information, synthesize a clear, accurate, and helpful final answer.
+
+Always reason through your plan explicitly before taking action. When you use tools, incorporate their outputs naturally into your response.`
 const MAX_CONTEXT_MESSAGES = parseInteger(process.env.MAX_CONTEXT_MESSAGES, 24)
 const MAX_AGENT_STEPS = parseInteger(process.env.MAX_AGENT_STEPS, 8)
 const REQUEST_TIMEOUT_MS = parseInteger(process.env.REQUEST_TIMEOUT_MS, 120000)
@@ -94,71 +97,14 @@ const toolRegistry = createToolRegistry({
   enabledTools: ENABLED_TOOLS.length > 0 ? ENABLED_TOOLS : undefined,
 })
 
-/**
- * 根据可用工具构建动态 System Prompt。
- * 在基础 prompt 之上追加工具列表和针对性使用指南。
- */
-function buildSystemPrompt(basePrompt: string, tools: typeof toolRegistry): string {
-  const lines: string[] = [basePrompt, '']
-
-  // 通用工作流指导
-  lines.push('## Working Process')
-  lines.push('1. For multi-step tasks, first use `todo` to create a task list.')
-  lines.push('2. Gather information using available tools.')
-  lines.push('3. Mark todos as done when steps complete.')
-  lines.push('4. Provide a concise final answer.')
-  lines.push('')
-
-  // 可用工具列表
-  lines.push('## Available Tools')
-  for (const tool of tools) {
-    lines.push(`- ${tool.name}: ${tool.description}`)
-  }
-
-  // 针对 todo 工具的额外强调
-  const hasTodo = tools.some((t) => t.name === 'todo')
-  if (hasTodo) {
-    lines.push('')
-    lines.push('## Todo Tool Guidelines')
-    lines.push('- ALWAYS create a todo list before starting complex tasks with multiple steps.')
-    lines.push('- Update todos as you progress through the task.')
-    lines.push('- Mark todos as done when each step is finished.')
-    lines.push('- Use todos to stay organized and avoid losing track of sub-tasks.')
-  }
-
-  // 针对 web_fetch / search 的指南
-  const hasWebFetch = tools.some((t) => t.name === 'web_fetch')
-  const hasSearch = tools.some((t) => t.name === 'search')
-  if (hasWebFetch || hasSearch) {
-    lines.push('')
-    lines.push('## Web Tools Guidelines')
-    if (hasSearch) {
-      lines.push('- Use `search` when you need up-to-date information from the internet.')
-    }
-    if (hasWebFetch) {
-      lines.push('- Use `web_fetch` when you need to read a specific webpage in detail.')
-    }
-    lines.push('- Prefer local tools (read_file, grep) over web tools when the information is already in the project.')
-  }
-
-  // 针对 replace 工具的指南
-  const hasReplace = tools.some((t) => t.name === 'replace')
-  if (hasReplace) {
-    lines.push('')
-    lines.push('## Replace Tool Guidelines')
-    lines.push('- Use `replace` for precise text substitutions in existing files.')
-    lines.push('- For large rewrites, use `write_file` instead.')
-  }
-
-  return lines.join('\n')
-}
-
-const DYNAMIC_SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, toolRegistry)
+/** 构建动态 System Prompt */
+const promptBuilder = new PromptBuilder(BASE_SYSTEM_PROMPT, toolRegistry)
+const SYSTEM_PROMPT = promptBuilder.build()
 
 /** 创建 ReAct Agent 实例，负责多轮推理循环 */
 const agent = new ReActAgent({
   defaultModel: DEFAULT_MODEL,
-  defaultSystemPrompt: DYNAMIC_SYSTEM_PROMPT,
+  defaultSystemPrompt: SYSTEM_PROMPT,
   maxSteps: MAX_AGENT_STEPS,
   maxTokens: MAX_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
@@ -196,7 +142,7 @@ app.get('/api/config', (_req, res) => {
     appTitle: APP_TITLE,
     configured: CONFIGURED,
     model: DEFAULT_MODEL,
-    defaultSystemPrompt: DYNAMIC_SYSTEM_PROMPT,
+    defaultSystemPrompt: SYSTEM_PROMPT,
     maxAgentSteps: MAX_AGENT_STEPS,
     tools: toolRegistry.map((tool) => ({
       name: tool.name,
@@ -232,7 +178,7 @@ app.post('/api/sessions', async (req, res, next) => {
   try {
     const session = createSession({
       title: typeof req.body?.title === 'string' ? req.body.title : '',
-      systemPrompt: typeof req.body?.systemPrompt === 'string' ? req.body.systemPrompt : DEFAULT_SYSTEM_PROMPT,
+      systemPrompt: typeof req.body?.systemPrompt === 'string' ? req.body.systemPrompt : SYSTEM_PROMPT,
       model: typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL,
     })
     await saveSession(session)
@@ -264,7 +210,7 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
       session.title = sanitizeTitle(req.body.title) || session.title
     }
     if (typeof req.body?.systemPrompt === 'string') {
-      session.systemPrompt = req.body.systemPrompt.trim() || DYNAMIC_SYSTEM_PROMPT
+      session.systemPrompt = req.body.systemPrompt.trim() || SYSTEM_PROMPT
     }
     if (typeof req.body?.model === 'string' && req.body.model.trim()) {
       session.model = req.body.model.trim()
@@ -376,12 +322,12 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
   if (!session) {
     session = createSession({
       title: sanitizeTitle(rawMessage),
-      systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : DEFAULT_SYSTEM_PROMPT,
+      systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : SYSTEM_PROMPT,
       model: requestedModel,
     })
   }
   if (typeof payload.systemPrompt === 'string') {
-    session.systemPrompt = payload.systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT
+    session.systemPrompt = payload.systemPrompt.trim() || SYSTEM_PROMPT
   }
   session.model = requestedModel
 
@@ -458,7 +404,7 @@ function createSession({ title, systemPrompt, model }: { title: string; systemPr
     id: crypto.randomUUID(),
     title: sanitizeTitle(title) || 'New chat',
     model: model || DEFAULT_MODEL,
-    systemPrompt: systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT,
+    systemPrompt: systemPrompt.trim() || SYSTEM_PROMPT,
     createdAt: timestamp,
     updatedAt: timestamp,
     messages: [],
