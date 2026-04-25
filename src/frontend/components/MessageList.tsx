@@ -159,7 +159,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           })}
 
           {isStreaming && (
-            <div className="message-row">
+            <div className="message-row" data-role="assistant">
               <img src="/logo.png" className="agent-avatar" alt="Kraken" />
               <article className="message agent-reply" data-role="assistant">
                 {toolRecords.length > 0 && (
@@ -189,7 +189,7 @@ const MessageItem: React.FC<{
 }> = ({ message, toolRecords }) => {
   const isAssistant = message.role === 'assistant'
   return (
-    <div className="message-row">
+    <div className="message-row" data-role={message.role}>
       {isAssistant && (
         <img src="/logo.png" className="agent-avatar" alt="Kraken" />
       )}
