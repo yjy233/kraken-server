@@ -153,6 +153,41 @@ export function buildShellEnv(policy: SessionSandboxPolicy): Record<string, stri
   }
 }
 
+export function buildSandboxPromptContext(policy: SessionSandboxPolicy): string {
+  const lines = [
+    '## Sandbox Context',
+    `- Workspace root: ${policy.workspaceRoot}`,
+    `- Shell commands run with cwd: ${policy.workspaceRoot}`,
+    `- Read access mode: ${policy.readMode}`,
+    `- Write access is limited to: ${policy.workspaceRoot}`,
+  ]
+
+  if (policy.readMode === 'allowlist') {
+    lines.push('- Additional readable roots:')
+    if (policy.readRoots.length > 0) {
+      for (const root of policy.readRoots) {
+        lines.push(`  - ${root}`)
+      }
+    } else {
+      lines.push('  - None')
+    }
+  } else {
+    lines.push('- Read access extends across the host filesystem except blocked sensitive paths.')
+  }
+
+  if (policy.sensitiveRoots.length > 0) {
+    lines.push('- Sensitive paths are blocked:')
+    for (const root of policy.sensitiveRoots) {
+      lines.push(`  - ${root}`)
+    }
+  }
+
+  lines.push('- Prefer paths relative to the workspace root unless an absolute host path is required.')
+  lines.push('- Do not assume you can read or write outside the allowed sandbox roots.')
+
+  return lines.join('\n')
+}
+
 export async function generateSeatbeltProfile(policy: SessionSandboxPolicy): Promise<string> {
   await ensureSandboxLayout(policy)
 

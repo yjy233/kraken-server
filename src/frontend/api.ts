@@ -25,8 +25,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export async function fetchConfig(): Promise<Config> {
-  const data = await request<{ config: Config }>('/api/config')
-  return data.config
+  const data = await request<Config | { config: Config }>('/api/config')
+  return 'config' in data ? data.config : data
 }
 
 export async function fetchSessions(): Promise<SessionSummary[]> {

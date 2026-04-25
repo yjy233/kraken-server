@@ -13,6 +13,8 @@ export default function App() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
+  const defaultWorkspaceRoot = config?.defaultWorkspaceRoot || ''
+  const effectiveWorkspaceRoot = workspaceRoot.trim() || defaultWorkspaceRoot
 
   useEffect(() => {
     sessions.refresh()
@@ -27,7 +29,7 @@ export default function App() {
   useEffect(() => {
     if (sessions.activeSession) {
       setSystemPrompt(sessions.activeSession.systemPrompt || config?.defaultSystemPrompt || '')
-      setWorkspaceRoot(sessions.activeSession.sandbox?.workspaceRoot || '')
+      setWorkspaceRoot(sessions.activeSession.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || '')
       setReadRootsInput((sessions.activeSession.sandbox?.readRoots || []).join('\n'))
     }
   }, [sessions.activeSession?.id, config])
@@ -53,8 +55,8 @@ export default function App() {
   const handleNewChat = useCallback(async () => {
     chat.clearError()
     const sp = systemPrompt || config?.defaultSystemPrompt || ''
-    await sessions.create(sp, buildSandboxConfig(workspaceRoot, readRootsInput))
-  }, [chat, sessions, systemPrompt, config, workspaceRoot, readRootsInput])
+    await sessions.create(sp, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput))
+  }, [chat, sessions, systemPrompt, config, effectiveWorkspaceRoot, readRootsInput])
 
   const handleOpenSession = useCallback(
     async (id: string) => {
@@ -79,18 +81,18 @@ export default function App() {
 
   const handleSend = useCallback(
     (message: string) => {
-      chat.send(message, systemPrompt, buildSandboxConfig(workspaceRoot, readRootsInput))
+      chat.send(message, systemPrompt, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput))
     },
-    [chat, systemPrompt, workspaceRoot, readRootsInput]
+    [chat, systemPrompt, effectiveWorkspaceRoot, readRootsInput]
   )
 
   const handleSaveSandbox = useCallback(async () => {
     if (!sessions.activeSession) return
-    const sandbox = buildSandboxConfig(workspaceRoot, readRootsInput)
+    const sandbox = buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput)
     sessions.setSandbox(sessions.activeSession.id, sandbox)
     const body = sandbox ? { sandbox } : {}
     await sessions.patch(sessions.activeSession.id, body)
-  }, [sessions, workspaceRoot, readRootsInput])
+  }, [sessions, effectiveWorkspaceRoot, readRootsInput])
 
   return (
     <div className="page-shell">
@@ -108,20 +110,38 @@ export default function App() {
           <div>
             <h2>{sessions.activeSession?.title || 'New chat'}</h2>
             <div className="sandbox-meta">
-              <input
-                className="sandbox-input"
-                type="text"
-                placeholder={config?.defaultWorkspaceRoot || '~/kraken'}
-                value={workspaceRoot}
-                onChange={(e) => setWorkspaceRoot(e.target.value)}
-              />
-              <textarea
-                className="sandbox-textarea"
-                rows={2}
-                placeholder="Extra readable roots, one per line"
-                value={readRootsInput}
-                onChange={(e) => setReadRootsInput(e.target.value)}
-              />
+              <div className="sandbox-field">
+                <label className="sandbox-label" htmlFor="workspace-root">
+                  Workspace Root
+                </label>
+                <input
+                  id="workspace-root"
+                  className="sandbox-input"
+                  type="text"
+                  placeholder={config?.defaultWorkspaceRoot || '~/kraken'}
+                  value={workspaceRoot}
+                  onChange={(e) => setWorkspaceRoot(e.target.value)}
+                />
+                <div className="sandbox-helper">
+                  Sent to backend: <code>{effectiveWorkspaceRoot || '~/kraken'}</code>
+                </div>
+              </div>
+              <div className="sandbox-field">
+                <label className="sandbox-label" htmlFor="read-roots">
+                  Extra Read Roots
+                </label>
+                <textarea
+                  id="read-roots"
+                  className="sandbox-textarea"
+                  rows={2}
+                  placeholder="Optional. One path per line. Leave empty to allow host reads except sensitive paths."
+                  value={readRootsInput}
+                  onChange={(e) => setReadRootsInput(e.target.value)}
+                />
+                <div className="sandbox-helper">
+                  Empty means host-read mode. Writes are still limited to the workspace root.
+                </div>
+              </div>
               {sessions.activeSession && (
                 <button className="ghost-button" type="button" onClick={handleSaveSandbox}>
                   Save sandbox

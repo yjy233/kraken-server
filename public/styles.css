@@ -297,6 +297,18 @@ body {
   gap: 8px;
 }
 
+.sandbox-field {
+  display: grid;
+  gap: 6px;
+}
+
+.sandbox-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
 .sandbox-input,
 .sandbox-textarea {
   width: 100%;
@@ -321,6 +333,17 @@ body {
 .sandbox-textarea:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.sandbox-helper {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.sandbox-helper code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
 }
 
 .header-meta {
@@ -737,5 +760,19 @@ body {
 
   .chat-panel {
     min-height: 100vh;
+  }
+
+  .chat-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sandbox-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .header-meta {
+    width: 100%;
+    flex-wrap: wrap;
   }
 }

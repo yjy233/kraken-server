@@ -22,7 +22,7 @@ import type { AgentMessage } from './agent/types.js'
 import { ReActAgent } from './agent/react-agent.js'
 import { PromptBuilder } from './agent/prompt-builder.js'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
-import { buildSessionSandboxPolicy, ensureSandboxLayout, expandHomePath, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
+import { buildSandboxPromptContext, buildSessionSandboxPolicy, ensureSandboxLayout, expandHomePath, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
 import type { SessionSandboxConfig } from './tools/types.js'
 import {
   parseInteger,
@@ -400,7 +400,11 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
   const result = await agent.run({
     messages: agentMessages,
     model: session.model,
-    systemPrompt: session.systemPrompt,
+    systemPrompt: [
+      session.systemPrompt,
+      '',
+      buildSandboxPromptContext(sandboxPolicy),
+    ].join('\n'),
     tools: toolRegistry,
     emit: emit ?? undefined,
   })
