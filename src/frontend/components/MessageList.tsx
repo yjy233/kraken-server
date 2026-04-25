@@ -136,7 +136,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     !sending &&
     toolRecords.length > 0 &&
     messages.length > 0 &&
-    messages[messages.length - 1].role === 'assistant'
+    messages.at(-1)!.role === 'assistant'
 
   return (
     <section ref={listRef} className="message-list" aria-live="polite">
@@ -159,20 +159,23 @@ export const MessageList: React.FC<MessageListProps> = ({
           })}
 
           {isStreaming && (
-            <article className="message agent-reply" data-role="assistant">
-              {toolRecords.length > 0 && (
-                <div className="agent-traces">
-                  {toolRecords.map((r) => (
-                    <ToolCallItem key={r.toolUseId} record={r} />
-                  ))}
-                </div>
-              )}
-              {streamingText && (
-                <div className="agent-answer">
-                  <div className="message-body" dangerouslySetInnerHTML={renderMarkdown(streamingText)} />
-                </div>
-              )}
-            </article>
+            <div className="message-row">
+              <img src="/logo.png" className="agent-avatar" alt="Kraken" />
+              <article className="message agent-reply" data-role="assistant">
+                {toolRecords.length > 0 && (
+                  <div className="agent-traces">
+                    {toolRecords.map((r) => (
+                      <ToolCallItem key={r.toolUseId} record={r} />
+                    ))}
+                  </div>
+                )}
+                {streamingText && (
+                  <div className="agent-answer">
+                    <div className="message-body" dangerouslySetInnerHTML={renderMarkdown(streamingText)} />
+                  </div>
+                )}
+              </article>
+            </div>
           )}
         </>
       )}
@@ -182,26 +185,32 @@ export const MessageList: React.FC<MessageListProps> = ({
 
 const MessageItem: React.FC<{
   message: SessionMessage
-  toolRecords?: ToolCallRecord[]
+  toolRecords?: ToolCallRecord[] | undefined
 }> = ({ message, toolRecords }) => {
+  const isAssistant = message.role === 'assistant'
   return (
-    <article className="message" data-role={message.role}>
-      {message.role === 'assistant' && toolRecords && toolRecords.length > 0 && (
-        <div className="agent-traces">
-          {toolRecords.map((r) => (
-            <ToolCallItem key={r.toolUseId} record={r} />
-          ))}
-        </div>
+    <div className="message-row">
+      {isAssistant && (
+        <img src="/logo.png" className="agent-avatar" alt="Kraken" />
       )}
-      <div
-        className="message-body"
-        dangerouslySetInnerHTML={
-          message.role === 'assistant'
-            ? renderMarkdown(message.content)
-            : { __html: escapeHtml(message.content).replace(/\n/g, '<br>') }
-        }
-      />
-    </article>
+      <article className="message" data-role={message.role}>
+        {isAssistant && toolRecords && toolRecords.length > 0 && (
+          <div className="agent-traces">
+            {toolRecords.map((r) => (
+              <ToolCallItem key={r.toolUseId} record={r} />
+            ))}
+          </div>
+        )}
+        <div
+          className="message-body"
+          dangerouslySetInnerHTML={
+            isAssistant
+              ? renderMarkdown(message.content)
+              : { __html: escapeHtml(message.content).replace(/\n/g, '<br>') }
+          }
+        />
+      </article>
+    </div>
   )
 }
 

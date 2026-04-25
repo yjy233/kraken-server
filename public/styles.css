@@ -81,6 +81,19 @@ body {
   gap: 8px;
 }
 
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .sidebar-header h2 {
   margin: 0;
   font-size: 14px;
@@ -305,12 +318,33 @@ body {
 }
 
 /* Messages */
-.message {
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   max-width: min(720px, 85%);
+}
+
+.message-row[data-role="user"] {
+  align-self: flex-end;
+}
+
+.agent-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.message {
   padding: 14px 18px;
   border-radius: 18px;
   animation: rise-in 200ms ease;
   line-height: 1.6;
+  flex: 1;
+  min-width: 0;
 }
 
 .message[data-role="user"] {

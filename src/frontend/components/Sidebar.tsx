@@ -19,7 +19,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h2>Sessions</h2>
+        <div className="sidebar-brand">
+          <img src="/logo.png" className="sidebar-logo" alt="Kraken" />
+          <h2>Sessions</h2>
+        </div>
         <button className="icon-button" type="button" aria-label="Refresh sessions" onClick={onRefresh}>
           Refresh
         </button>

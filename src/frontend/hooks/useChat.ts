@@ -12,7 +12,7 @@ interface ChatState {
 export function useChat(
   activeSession: Session | null,
   onSessionUpdate: (session: Session) => void,
-  onSessionsRefresh: () => Promise<void>
+  onSessionsRefresh: () => Promise<unknown>
 ) {
   const [state, setState] = useState<ChatState>({
     sending: false,
