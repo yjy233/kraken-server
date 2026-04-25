@@ -15,12 +15,15 @@ import crypto from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import type { AgentMessage } from './agent/types.js'
 import { ReActAgent } from './agent/react-agent.js'
 import { PromptBuilder } from './agent/prompt-builder.js'
-import { createToolRegistry } from './tools/registry.js'
+import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
+import { buildSessionSandboxPolicy, ensureSandboxLayout, expandHomePath, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
+import type { SessionSandboxConfig } from './tools/types.js'
 import {
   parseInteger,
   parseBoolean,
@@ -60,6 +63,10 @@ const MAX_AGENT_STEPS = parseInteger(process.env.MAX_AGENT_STEPS, 8)
 const REQUEST_TIMEOUT_MS = parseInteger(process.env.REQUEST_TIMEOUT_MS, 120000)
 const ALLOW_SHELL_TOOL = parseBoolean(process.env.ALLOW_SHELL_TOOL, true)
 const ALLOW_FILE_WRITE_TOOL = parseBoolean(process.env.ALLOW_FILE_WRITE_TOOL, false)
+const ENABLE_PATH_SANDBOX = parseBoolean(process.env.ENABLE_PATH_SANDBOX, true)
+const ENABLE_SEATBELT = parseBoolean(process.env.ENABLE_SEATBELT, true)
+const DEFAULT_WORKSPACE_ROOT = path.resolve(expandHomePath(process.env.DEFAULT_WORKSPACE_ROOT || path.join(os.homedir(), 'kraken')))
+const SENSITIVE_PATHS = parseSensitivePaths(process.env.SENSITIVE_PATHS)
 const CONFIGURED = Boolean(process.env.OPENROUTER_API_KEY)
 
 // 解析 ENABLED_TOOLS，格式：逗号分隔的工具名，如 "list_directory,read_file,todo"
@@ -67,6 +74,17 @@ const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
+
+const TOOL_REGISTRY_OPTIONS: CreateRegistryOptions = {
+  rootDir: ROOT_DIR,
+  allowShellTool: ALLOW_SHELL_TOOL,
+  allowFileWriteTool: ALLOW_FILE_WRITE_TOOL,
+  enablePathSandbox: ENABLE_PATH_SANDBOX,
+  enableSeatbelt: ENABLE_SEATBELT,
+  defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+  sensitivePaths: SENSITIVE_PATHS,
+  enabledTools: ENABLED_TOOLS.length > 0 ? ENABLED_TOOLS : undefined,
+}
 
 // ─── 类型 ────────────────────────────────────────────
 
@@ -82,23 +100,14 @@ interface Session {
   title: string
   model: string
   systemPrompt: string
+  sandbox?: SessionSandboxConfig | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessage[]
 }
 
-// ─── 初始化 ──────────────────────────────────────────
-
-/** 创建工具注册表 */
-const toolRegistry = createToolRegistry({
-  rootDir: ROOT_DIR,
-  allowShellTool: ALLOW_SHELL_TOOL,
-  allowFileWriteTool: ALLOW_FILE_WRITE_TOOL,
-  enabledTools: ENABLED_TOOLS.length > 0 ? ENABLED_TOOLS : undefined,
-})
-
 /** 构建动态 System Prompt */
-const promptBuilder = new PromptBuilder(BASE_SYSTEM_PROMPT, toolRegistry)
+const promptBuilder = new PromptBuilder(BASE_SYSTEM_PROMPT, createToolRegistry(TOOL_REGISTRY_OPTIONS))
 const SYSTEM_PROMPT = promptBuilder.build()
 
 /** 创建 ReAct Agent 实例，负责多轮推理循环 */
@@ -108,7 +117,7 @@ const agent = new ReActAgent({
   maxSteps: MAX_AGENT_STEPS,
   maxTokens: MAX_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
-  toolRegistry,
+  toolRegistry: [],
 })
 
 // ─── Express 应用 ────────────────────────────────────
@@ -129,7 +138,7 @@ app.get('/api/health', (_req, res) => {
     port: PORT,
     model: DEFAULT_MODEL,
     maxAgentSteps: MAX_AGENT_STEPS,
-    toolCount: toolRegistry.length,
+    toolCount: createToolRegistry(TOOL_REGISTRY_OPTIONS).length,
     now: new Date().toISOString(),
   })
 })
@@ -144,7 +153,10 @@ app.get('/api/config', (_req, res) => {
     model: DEFAULT_MODEL,
     defaultSystemPrompt: SYSTEM_PROMPT,
     maxAgentSteps: MAX_AGENT_STEPS,
-    tools: toolRegistry.map((tool) => ({
+    defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+    sandboxEnabled: ENABLE_PATH_SANDBOX,
+    seatbeltEnabled: ENABLE_SEATBELT,
+    tools: createToolRegistry(TOOL_REGISTRY_OPTIONS).map((tool) => ({
       name: tool.name,
       description: tool.description,
       input_schema: tool.input_schema,
@@ -155,7 +167,7 @@ app.get('/api/config', (_req, res) => {
 app.get('/api/tools', (_req, res) => {
   res.json({
     ok: true,
-    tools: toolRegistry.map((tool) => ({
+    tools: createToolRegistry(TOOL_REGISTRY_OPTIONS).map((tool) => ({
       name: tool.name,
       description: tool.description,
       input_schema: tool.input_schema,
@@ -180,6 +192,7 @@ app.post('/api/sessions', async (req, res, next) => {
       title: typeof req.body?.title === 'string' ? req.body.title : '',
       systemPrompt: typeof req.body?.systemPrompt === 'string' ? req.body.systemPrompt : SYSTEM_PROMPT,
       model: typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL,
+      sandbox: normalizeSessionSandboxConfig(req.body?.sandbox),
     })
     await saveSession(session)
     res.status(201).json({ ok: true, session, summary: summarizeSession(session) })
@@ -214,6 +227,9 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
     }
     if (typeof req.body?.model === 'string' && req.body.model.trim()) {
       session.model = req.body.model.trim()
+    }
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'sandbox')) {
+      session.sandbox = normalizeSessionSandboxConfig(req.body?.sandbox)
     }
     session.updatedAt = new Date().toISOString()
     await saveSession(session)
@@ -323,6 +339,7 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
   const requestedModel = typeof payload.model === 'string' && payload.model.trim()
     ? payload.model.trim()
     : DEFAULT_MODEL
+  const requestSandbox = normalizeSessionSandboxConfig(payload.sandbox)
 
   // 获取已有会话，或创建新会话
   let session: Session | null = typeof payload.sessionId === 'string' && payload.sessionId
@@ -333,12 +350,31 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
       title: sanitizeTitle(rawMessage),
       systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : SYSTEM_PROMPT,
       model: requestedModel,
+      sandbox: requestSandbox,
     })
   }
   if (typeof payload.systemPrompt === 'string') {
     session.systemPrompt = payload.systemPrompt.trim() || SYSTEM_PROMPT
   }
+  if (requestSandbox !== undefined) {
+    session.sandbox = requestSandbox
+  }
   session.model = requestedModel
+
+  const sandboxPolicy = buildSessionSandboxPolicy({
+    sessionId: session.id,
+    sessionSandbox: session.sandbox,
+    defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+    sensitivePaths: SENSITIVE_PATHS,
+    enablePathSandbox: ENABLE_PATH_SANDBOX,
+  })
+
+  await ensureSandboxLayout(sandboxPolicy)
+
+  const toolRegistry = createToolRegistry(TOOL_REGISTRY_OPTIONS, {
+    sessionId: session.id,
+    sessionSandbox: session.sandbox,
+  })
 
   // 追加用户消息
   const userMessage: SessionMessage = {
@@ -365,6 +401,7 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
     messages: agentMessages,
     model: session.model,
     systemPrompt: session.systemPrompt,
+    tools: toolRegistry,
     emit: emit ?? undefined,
   })
 
@@ -407,13 +444,14 @@ function buildAgentMessages(sessionMessages: SessionMessage[], maxMessages: numb
 }
 
 /** 创建新会话 */
-function createSession({ title, systemPrompt, model }: { title: string; systemPrompt: string; model: string }): Session {
+function createSession({ title, systemPrompt, model, sandbox }: { title: string; systemPrompt: string; model: string; sandbox?: SessionSandboxConfig | undefined }): Session {
   const timestamp = new Date().toISOString()
   return {
     id: crypto.randomUUID(),
     title: sanitizeTitle(title) || 'New chat',
     model: model || DEFAULT_MODEL,
     systemPrompt: systemPrompt.trim() || SYSTEM_PROMPT,
+    sandbox,
     createdAt: timestamp,
     updatedAt: timestamp,
     messages: [],
@@ -427,6 +465,7 @@ function summarizeSession(session: Session) {
     id: session.id,
     title: session.title,
     model: session.model,
+    sandbox: session.sandbox,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: session.messages.length,

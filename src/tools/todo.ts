@@ -33,7 +33,7 @@ export const todoTool: Tool = {
   },
   execute: async (input, ctx) => {
     const action = String(input.action || '').trim()
-    const storePath = path.join(ctx.rootDir, '.todos.json')
+    const storePath = path.join(ctx.sandboxPolicy.workspaceRoot, '.todos.json')
 
     const todos = await loadTodos(storePath)
 

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { Session, SessionMessage, RuntimeEvent, StreamCompleteData } from '../types.js'
+import type { Session, SessionMessage, RuntimeEvent, SessionSandboxConfig } from '../types.js'
 import { streamChat as apiStreamChat } from '../api.js'
 
 interface ChatState {
@@ -24,7 +24,7 @@ export function useChat(
   const abortRef = useRef<(() => void) | null>(null)
 
   const send = useCallback(
-    async (message: string, systemPrompt: string) => {
+    async (message: string, systemPrompt: string, sandbox?: SessionSandboxConfig) => {
       if (!message.trim()) return
 
       setState({ sending: true, error: null, runtimeEvents: [], streamingText: '' })
@@ -42,6 +42,7 @@ export function useChat(
         title: message.slice(0, 60) || 'New chat',
         model: '',
         systemPrompt,
+        sandbox,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
@@ -54,6 +55,7 @@ export function useChat(
         sessionId: activeSession?.id || null,
         systemPrompt: systemPrompt.trim(),
         message: message.trim(),
+        sandbox,
       }
 
       abortRef.current = apiStreamChat(payload, {

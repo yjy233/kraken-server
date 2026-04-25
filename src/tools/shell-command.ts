@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import type { Tool, ToolContext } from './types.js'
+import { buildShellEnv, ensureSandboxLayout, generateSeatbeltProfile } from './sandbox.js'
 import { clampInteger } from '../utils/helpers.js'
 
 export const shellCommandTool: Tool = {
@@ -26,7 +28,7 @@ export const shellCommandTool: Tool = {
       throw new Error('shell_command is disabled. Set ALLOW_SHELL_TOOL=true to enable it.')
     }
     const timeoutMs = clampInteger(input.timeout_ms, 15000, 1000, 120000)
-    const result = await runShellCommand(ctx.rootDir, String(input.command || ''), timeoutMs)
+    const result = await runShellCommand(ctx, String(input.command || ''), timeoutMs)
     return {
       output: [
         `$ ${input.command}`,
@@ -42,19 +44,19 @@ export const shellCommandTool: Tool = {
 }
 
 async function runShellCommand(
-  cwd: string,
+  ctx: ToolContext,
   command: string,
   timeoutMs: number
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   if (!command.trim()) {
     throw new Error('command is required')
   }
+  await ensureSandboxLayout(ctx.sandboxPolicy)
+  const env = buildShellEnv(ctx.sandboxPolicy)
+  const useSeatbelt = ctx.enableSeatbelt && process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec')
+  const child = await spawnSandboxedCommand(ctx, command, env, useSeatbelt)
+
   return new Promise((resolve, reject) => {
-    const child = spawn(command, {
-      cwd,
-      env: process.env,
-      shell: true,
-    })
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -86,5 +88,25 @@ async function runShellCommand(
         exitCode: exitCode ?? -1,
       })
     })
+  })
+}
+
+async function spawnSandboxedCommand(
+  ctx: ToolContext,
+  command: string,
+  env: Record<string, string>,
+  useSeatbelt: boolean
+) {
+  if (!useSeatbelt) {
+    return spawn('/bin/zsh', ['-lc', command], {
+      cwd: ctx.sandboxPolicy.workspaceRoot,
+      env,
+    })
+  }
+
+  const profilePath = await generateSeatbeltProfile(ctx.sandboxPolicy)
+  return spawn('/usr/bin/sandbox-exec', ['-f', profilePath, '/bin/zsh', '-lc', command], {
+    cwd: ctx.sandboxPolicy.workspaceRoot,
+    env,
   })
 }

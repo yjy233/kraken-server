@@ -8,7 +8,7 @@
 
 import crypto from 'node:crypto'
 import { loopQuery } from './loop-query.js'
-import type { AgentMessage, ReActAgentConfig, RunResult, RunStep, EmitFn, RunAgentRequestResult } from './types.js'
+import type { AgentMessage, ReActAgentConfig, RunResult, RunStep, EmitFn, RunAgentRequestResult, ToolDefinition } from './types.js'
 
 export class ReActAgent {
   constructor(private config: ReActAgentConfig) {}
@@ -25,11 +25,13 @@ export class ReActAgent {
     messages: AgentMessage[]
     model?: string
     systemPrompt?: string
+    tools?: ToolDefinition[] | undefined
     emit?: EmitFn | undefined
   }): Promise<RunAgentRequestResult & { finalMessages: AgentMessage[] }> {
     const model = params.model || this.config.defaultModel
     const systemPrompt = params.systemPrompt || this.config.defaultSystemPrompt
     const emit = params.emit
+    const tools = params.tools || this.config.toolRegistry
 
     // 初始化运行记录
     const run: RunResult = {
@@ -56,7 +58,7 @@ export class ReActAgent {
         messages: currentMessages,
         model,
         systemPrompt,
-        tools: this.config.toolRegistry,
+        tools,
         maxOutputTokens: this.config.maxTokens,
         step: stepIndex + 1,
         emit,

@@ -5,11 +5,14 @@ import { Composer } from './components/Composer.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
 import { useChat } from './hooks/useChat.js'
+import type { SessionSandboxConfig } from './types.js'
 
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [workspaceRoot, setWorkspaceRoot] = useState('')
+  const [readRootsInput, setReadRootsInput] = useState('')
 
   useEffect(() => {
     sessions.refresh()
@@ -24,8 +27,17 @@ export default function App() {
   useEffect(() => {
     if (sessions.activeSession) {
       setSystemPrompt(sessions.activeSession.systemPrompt || config?.defaultSystemPrompt || '')
+      setWorkspaceRoot(sessions.activeSession.sandbox?.workspaceRoot || '')
+      setReadRootsInput((sessions.activeSession.sandbox?.readRoots || []).join('\n'))
     }
   }, [sessions.activeSession?.id, config])
+
+  useEffect(() => {
+    if (!sessions.activeSession && config) {
+      setWorkspaceRoot(config.defaultWorkspaceRoot || '')
+      setReadRootsInput('')
+    }
+  }, [sessions.activeSession, config])
 
   const handleSessionUpdate = useCallback(
     (session: any) => {
@@ -41,8 +53,8 @@ export default function App() {
   const handleNewChat = useCallback(async () => {
     chat.clearError()
     const sp = systemPrompt || config?.defaultSystemPrompt || ''
-    await sessions.create(sp)
-  }, [chat, sessions, systemPrompt, config])
+    await sessions.create(sp, buildSandboxConfig(workspaceRoot, readRootsInput))
+  }, [chat, sessions, systemPrompt, config, workspaceRoot, readRootsInput])
 
   const handleOpenSession = useCallback(
     async (id: string) => {
@@ -67,10 +79,18 @@ export default function App() {
 
   const handleSend = useCallback(
     (message: string) => {
-      chat.send(message, systemPrompt)
+      chat.send(message, systemPrompt, buildSandboxConfig(workspaceRoot, readRootsInput))
     },
-    [chat, systemPrompt]
+    [chat, systemPrompt, workspaceRoot, readRootsInput]
   )
+
+  const handleSaveSandbox = useCallback(async () => {
+    if (!sessions.activeSession) return
+    const sandbox = buildSandboxConfig(workspaceRoot, readRootsInput)
+    sessions.setSandbox(sessions.activeSession.id, sandbox)
+    const body = sandbox ? { sandbox } : {}
+    await sessions.patch(sessions.activeSession.id, body)
+  }, [sessions, workspaceRoot, readRootsInput])
 
   return (
     <div className="page-shell">
@@ -87,6 +107,27 @@ export default function App() {
         <header className="chat-header">
           <div>
             <h2>{sessions.activeSession?.title || 'New chat'}</h2>
+            <div className="sandbox-meta">
+              <input
+                className="sandbox-input"
+                type="text"
+                placeholder={config?.defaultWorkspaceRoot || '~/kraken'}
+                value={workspaceRoot}
+                onChange={(e) => setWorkspaceRoot(e.target.value)}
+              />
+              <textarea
+                className="sandbox-textarea"
+                rows={2}
+                placeholder="Extra readable roots, one per line"
+                value={readRootsInput}
+                onChange={(e) => setReadRootsInput(e.target.value)}
+              />
+              {sessions.activeSession && (
+                <button className="ghost-button" type="button" onClick={handleSaveSandbox}>
+                  Save sandbox
+                </button>
+              )}
+            </div>
           </div>
           <div className="header-meta">
             <span className="session-count">
@@ -118,4 +159,25 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function buildSandboxConfig(workspaceRoot: string, readRootsInput: string): SessionSandboxConfig | undefined {
+  const normalizedWorkspaceRoot = workspaceRoot.trim()
+  const readRoots = readRootsInput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (!normalizedWorkspaceRoot && readRoots.length === 0) {
+    return undefined
+  }
+
+  const sandbox: SessionSandboxConfig = {}
+  if (normalizedWorkspaceRoot) {
+    sandbox.workspaceRoot = normalizedWorkspaceRoot
+  }
+  if (readRoots.length > 0) {
+    sandbox.readRoots = readRoots
+  }
+  return sandbox
 }

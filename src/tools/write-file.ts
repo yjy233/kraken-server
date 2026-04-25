@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
+import { resolveSandboxPath, toDisplayPath } from './sandbox.js'
 
 export const writeFileTool: Tool = {
   name: 'write_file',
@@ -23,19 +24,11 @@ export const writeFileTool: Tool = {
     if (!ctx.allowFileWriteTool) {
       throw new Error('write_file is disabled. Set ALLOW_FILE_WRITE_TOOL=true to enable it.')
     }
-    const filePath = resolveProjectPath(ctx.rootDir, input.path)
+    const filePath = await resolveSandboxPath(ctx.sandboxPolicy, input.path, { mode: 'write', allowMissing: true })
     await fs.mkdir(path.dirname(filePath), { recursive: true })
     await fs.writeFile(filePath, String(input.content || ''), 'utf8')
     return {
-      output: `Wrote ${path.relative(ctx.rootDir, filePath)}`,
+      output: `Wrote ${toDisplayPath(ctx.sandboxPolicy, filePath)}`,
     }
   },
-}
-
-function resolveProjectPath(rootDir: string, relativePath: unknown): string {
-  const candidate = path.resolve(rootDir, String(relativePath || ''))
-  if (!candidate.startsWith(rootDir)) {
-    throw new Error('Path escapes project root')
-  }
-  return candidate
 }

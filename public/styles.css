@@ -290,6 +290,39 @@ body {
   color: var(--text);
 }
 
+.sandbox-meta {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+  gap: 8px;
+}
+
+.sandbox-input,
+.sandbox-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.sandbox-textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.sandbox-input:focus,
+.sandbox-textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
 .header-meta {
   display: flex;
   align-items: center;

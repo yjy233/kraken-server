@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { Session, SessionSummary } from '../types.js'
+import type { Session, SessionSandboxConfig, SessionSummary } from '../types.js'
 import { fetchSessions, createSession, fetchSession, updateSession, deleteSession as apiDeleteSession, deleteAllSessions as apiDeleteAllSessions } from '../api.js'
 
 export function useSessions() {
@@ -19,15 +19,15 @@ export function useSessions() {
     return session
   }, [])
 
-  const create = useCallback(async (systemPrompt: string) => {
-    const { session } = await createSession({ systemPrompt })
+  const create = useCallback(async (systemPrompt: string, sandbox?: SessionSandboxConfig) => {
+    const { session } = await createSession({ systemPrompt, sandbox })
     setActiveSession(session)
     await refresh()
     return session
   }, [refresh])
 
-  const patch = useCallback(async (sessionId: string, systemPrompt: string) => {
-    const { session } = await updateSession(sessionId, { systemPrompt })
+  const patch = useCallback(async (sessionId: string, body: { systemPrompt?: string; sandbox?: SessionSandboxConfig }) => {
+    const { session } = await updateSession(sessionId, body)
     setActiveSession(session)
     await refresh()
     return session
@@ -51,6 +51,10 @@ export function useSessions() {
     setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, systemPrompt } : prev))
   }, [])
 
+  const setSandbox = useCallback((sessionId: string, sandbox?: SessionSandboxConfig) => {
+    setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, sandbox } : prev))
+  }, [])
+
   return {
     sessions,
     activeSession,
@@ -64,5 +68,6 @@ export function useSessions() {
     clearAll,
     setActiveSession,
     setSystemPrompt,
+    setSandbox,
   }
 }

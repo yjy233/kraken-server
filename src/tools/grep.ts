@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
+import { resolveSandboxPath, toDisplayPath } from './sandbox.js'
 import { clampInteger } from '../utils/helpers.js'
 
 export const grepTool: Tool = {
@@ -32,7 +33,7 @@ export const grepTool: Tool = {
       throw new Error('pattern is required')
     }
     const regex = new RegExp(pattern, 'i')
-    const searchPath = resolveProjectPath(ctx.rootDir, input.path || '.')
+    const searchPath = await resolveSandboxPath(ctx.sandboxPolicy, input.path || '.', { mode: 'read' })
     const maxResults = clampInteger(input.max_results, 50, 1, 200)
 
     const files = await collectFiles(searchPath)
@@ -40,7 +41,7 @@ export const grepTool: Tool = {
 
     for (const absoluteFile of files) {
       if (matches.length >= maxResults) break
-      const relativeFile = path.relative(ctx.rootDir, absoluteFile)
+      const relativeFile = toDisplayPath(ctx.sandboxPolicy, absoluteFile)
       let raw = ''
       try {
         raw = await fs.readFile(absoluteFile, 'utf8')
@@ -78,12 +79,4 @@ async function collectFiles(dir: string): Promise<string[]> {
 
 function shouldSkip(name: string): boolean {
   return ['.git', 'node_modules', '.sessions', 'dist'].includes(name)
-}
-
-function resolveProjectPath(rootDir: string, relativePath: unknown): string {
-  const candidate = path.resolve(rootDir, String(relativePath || ''))
-  if (!candidate.startsWith(rootDir)) {
-    throw new Error('Path escapes project root')
-  }
-  return candidate
 }

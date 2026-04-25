@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
-import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
+import { resolveSandboxPath, toDisplayPath } from './sandbox.js'
 
 export const replaceTool: Tool = {
   name: 'replace',
@@ -28,7 +28,10 @@ export const replaceTool: Tool = {
     required: ['path', 'pattern', 'replacement'],
   },
   execute: async (input, ctx) => {
-    const filePath = resolveProjectPath(ctx.rootDir, input.path)
+    if (!ctx.allowFileWriteTool) {
+      throw new Error('replace is disabled. Set ALLOW_FILE_WRITE_TOOL=true to enable it.')
+    }
+    const filePath = await resolveSandboxPath(ctx.sandboxPolicy, input.path, { mode: 'write' })
     const pattern = String(input.pattern || '')
     const replacement = String(input.replacement || '')
     const useRegex = Boolean(input.use_regex)
@@ -63,7 +66,7 @@ export const replaceTool: Tool = {
     const diff = buildDiffPreview(raw, newContent)
 
     return {
-      output: `Replaced ${count} occurrence(s) in ${input.path}\n\n${diff}`,
+      output: `Replaced ${count} occurrence(s) in ${toDisplayPath(ctx.sandboxPolicy, filePath)}\n\n${diff}`,
     }
   },
 }
@@ -111,12 +114,4 @@ function buildDiffPreview(oldText: string, newText: string): string {
   }
 
   return lines.join('\n')
-}
-
-function resolveProjectPath(rootDir: string, relativePath: unknown): string {
-  const candidate = path.resolve(rootDir, String(relativePath || ''))
-  if (!candidate.startsWith(rootDir)) {
-    throw new Error('Path escapes project root')
-  }
-  return candidate
 }

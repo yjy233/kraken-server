@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
-import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
+import { resolveSandboxPath } from './sandbox.js'
 import { clampInteger } from '../utils/helpers.js'
 
 export const readFileTool: Tool = {
@@ -27,7 +27,7 @@ export const readFileTool: Tool = {
     required: ['path'],
   },
   execute: async (input, ctx) => {
-    const filePath = resolveProjectPath(ctx.rootDir, input.path)
+    const filePath = await resolveSandboxPath(ctx.sandboxPolicy, input.path, { mode: 'read' })
     const raw = await fs.readFile(filePath, 'utf8')
     const lines = raw.split(/\r?\n/)
     const start = clampInteger(input.start_line, 1, 1, lines.length || 1)
@@ -40,12 +40,4 @@ export const readFileTool: Tool = {
       output: snippet || '(empty file)',
     }
   },
-}
-
-function resolveProjectPath(rootDir: string, relativePath: unknown): string {
-  const candidate = path.resolve(rootDir, String(relativePath || ''))
-  if (!candidate.startsWith(rootDir)) {
-    throw new Error('Path escapes project root')
-  }
-  return candidate
 }

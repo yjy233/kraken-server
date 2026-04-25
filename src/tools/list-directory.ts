@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
+import { resolveSandboxPath } from './sandbox.js'
 
 export const listDirectoryTool: Tool = {
   name: 'list_directory',
@@ -20,7 +21,7 @@ export const listDirectoryTool: Tool = {
     required: [],
   },
   execute: async (input, ctx) => {
-    const targetPath = resolveProjectPath(ctx.rootDir, input.path || '.')
+    const targetPath = await resolveSandboxPath(ctx.sandboxPolicy, input.path || '.', { mode: 'read' })
     const recursive = Boolean(input.recursive)
 
     const entries = await listEntries(targetPath, recursive)
@@ -75,12 +76,4 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
-}
-
-function resolveProjectPath(rootDir: string, relativePath: unknown): string {
-  const candidate = path.resolve(rootDir, String(relativePath || ''))
-  if (!candidate.startsWith(rootDir)) {
-    throw new Error('Path escapes project root')
-  }
-  return candidate
 }

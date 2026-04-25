@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
+import { resolveSandboxPath, toDisplayPath } from './sandbox.js'
 
 export const globTool: Tool = {
   name: 'glob',
@@ -24,12 +25,12 @@ export const globTool: Tool = {
     if (!pattern) {
       throw new Error('pattern is required')
     }
-    const searchPath = resolveProjectPath(ctx.rootDir, input.path || '.')
+    const searchPath = await resolveSandboxPath(ctx.sandboxPolicy, input.path || '.', { mode: 'read' })
     const regex = globToRegex(pattern)
 
     const files = await collectFiles(searchPath)
     const matches = files
-      .map((f) => path.relative(ctx.rootDir, f))
+      .map((f) => toDisplayPath(ctx.sandboxPolicy, f))
       .filter((rel) => regex.test(rel))
       .sort()
 
@@ -73,12 +74,4 @@ async function collectFiles(dir: string): Promise<string[]> {
 
 function shouldSkip(name: string): boolean {
   return ['.git', 'node_modules', '.sessions', 'dist'].includes(name)
-}
-
-function resolveProjectPath(rootDir: string, relativePath: unknown): string {
-  const candidate = path.resolve(rootDir, String(relativePath || ''))
-  if (!candidate.startsWith(rootDir)) {
-    throw new Error('Path escapes project root')
-  }
-  return candidate
 }

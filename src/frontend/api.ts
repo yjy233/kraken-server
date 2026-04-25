@@ -2,7 +2,7 @@
  * API 调用封装
  */
 
-import type { Config, Session, SessionSummary, StreamCompleteData } from './types.js'
+import type { Config, Session, SessionSummary, SessionSandboxConfig, StreamCompleteData } from './types.js'
 
 const BASE = ''
 
@@ -34,7 +34,7 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
   return data.sessions
 }
 
-export async function createSession(body: { systemPrompt: string }): Promise<{ session: Session; summary: SessionSummary }> {
+export async function createSession(body: { systemPrompt: string; sandbox?: SessionSandboxConfig | undefined }): Promise<{ session: Session; summary: SessionSummary }> {
   return request('/api/sessions', { method: 'POST', body: JSON.stringify(body) })
 }
 
@@ -43,7 +43,7 @@ export async function fetchSession(sessionId: string): Promise<Session> {
   return data.session
 }
 
-export async function updateSession(sessionId: string, body: { title?: string; systemPrompt?: string; model?: string }): Promise<{ session: Session; summary: SessionSummary }> {
+export async function updateSession(sessionId: string, body: { title?: string; systemPrompt?: string; model?: string; sandbox?: SessionSandboxConfig | undefined }): Promise<{ session: Session; summary: SessionSummary }> {
   return request(`/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(body) })
 }
 
@@ -60,6 +60,7 @@ export interface ChatPayload {
   systemPrompt: string
   message: string
   model?: string
+  sandbox?: SessionSandboxConfig | undefined
 }
 
 export function streamChat(

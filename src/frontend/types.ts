@@ -8,6 +8,9 @@ export interface Config {
   model: string
   defaultSystemPrompt: string
   maxAgentSteps: number
+  defaultWorkspaceRoot: string
+  sandboxEnabled: boolean
+  seatbeltEnabled: boolean
   tools: ToolInfo[]
 }
 
@@ -22,6 +25,7 @@ export interface Session {
   title: string
   model: string
   systemPrompt: string
+  sandbox?: SessionSandboxConfig | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessage[]
@@ -31,6 +35,7 @@ export interface SessionSummary {
   id: string
   title: string
   model: string
+  sandbox?: SessionSandboxConfig | undefined
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -49,6 +54,11 @@ export interface RuntimeEvent {
   event: string
   data: unknown
   at: string
+}
+
+export interface SessionSandboxConfig {
+  workspaceRoot?: string
+  readRoots?: string[]
 }
 
 export interface RunResult {
