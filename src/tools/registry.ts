@@ -21,6 +21,7 @@ export interface CreateRegistryOptions {
   rootDir: string
   allowShellTool: boolean
   allowFileWriteTool: boolean
+  enabledTools?: string[] | undefined // 若为空则启用全部（write_file/shell_command 仍受独立开关控制）
 }
 
 export function createToolRegistry(options: CreateRegistryOptions): ToolDefinition[] {
@@ -30,8 +31,12 @@ export function createToolRegistry(options: CreateRegistryOptions): ToolDefiniti
     allowFileWriteTool: options.allowFileWriteTool,
   }
 
+  const enabledSet = options.enabledTools && options.enabledTools.length > 0
+    ? new Set(options.enabledTools)
+    : null
+
   // 所有工具在这里注册
-  const tools: Tool[] = [
+  const allTools: Tool[] = [
     listDirectoryTool,
     readFileTool,
     grepTool,
@@ -43,6 +48,11 @@ export function createToolRegistry(options: CreateRegistryOptions): ToolDefiniti
     searchTool,
     replaceTool,
   ]
+
+  const tools = allTools.filter((tool) => {
+    if (!enabledSet) return true
+    return enabledSet.has(tool.name)
+  })
 
   // 注入上下文：包装 execute 方法，并映射为 ToolDefinition 格式
   return tools.map((tool) => ({

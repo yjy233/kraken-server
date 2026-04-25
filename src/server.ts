@@ -59,6 +59,12 @@ const ALLOW_SHELL_TOOL = parseBoolean(process.env.ALLOW_SHELL_TOOL, true)
 const ALLOW_FILE_WRITE_TOOL = parseBoolean(process.env.ALLOW_FILE_WRITE_TOOL, false)
 const CONFIGURED = Boolean(process.env.OPENROUTER_API_KEY)
 
+// 解析 ENABLED_TOOLS，格式：逗号分隔的工具名，如 "list_directory,read_file,todo"
+const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
 // ─── 类型 ────────────────────────────────────────────
 
 interface SessionMessage {
@@ -80,17 +86,79 @@ interface Session {
 
 // ─── 初始化 ──────────────────────────────────────────
 
-/** 创建工具注册表（5 个本地工具） */
+/** 创建工具注册表 */
 const toolRegistry = createToolRegistry({
   rootDir: ROOT_DIR,
   allowShellTool: ALLOW_SHELL_TOOL,
   allowFileWriteTool: ALLOW_FILE_WRITE_TOOL,
+  enabledTools: ENABLED_TOOLS.length > 0 ? ENABLED_TOOLS : undefined,
 })
+
+/**
+ * 根据可用工具构建动态 System Prompt。
+ * 在基础 prompt 之上追加工具列表和针对性使用指南。
+ */
+function buildSystemPrompt(basePrompt: string, tools: typeof toolRegistry): string {
+  const lines: string[] = [basePrompt, '']
+
+  // 通用工作流指导
+  lines.push('## Working Process')
+  lines.push('1. For multi-step tasks, first use `todo` to create a task list.')
+  lines.push('2. Gather information using available tools.')
+  lines.push('3. Mark todos as done when steps complete.')
+  lines.push('4. Provide a concise final answer.')
+  lines.push('')
+
+  // 可用工具列表
+  lines.push('## Available Tools')
+  for (const tool of tools) {
+    lines.push(`- ${tool.name}: ${tool.description}`)
+  }
+
+  // 针对 todo 工具的额外强调
+  const hasTodo = tools.some((t) => t.name === 'todo')
+  if (hasTodo) {
+    lines.push('')
+    lines.push('## Todo Tool Guidelines')
+    lines.push('- ALWAYS create a todo list before starting complex tasks with multiple steps.')
+    lines.push('- Update todos as you progress through the task.')
+    lines.push('- Mark todos as done when each step is finished.')
+    lines.push('- Use todos to stay organized and avoid losing track of sub-tasks.')
+  }
+
+  // 针对 web_fetch / search 的指南
+  const hasWebFetch = tools.some((t) => t.name === 'web_fetch')
+  const hasSearch = tools.some((t) => t.name === 'search')
+  if (hasWebFetch || hasSearch) {
+    lines.push('')
+    lines.push('## Web Tools Guidelines')
+    if (hasSearch) {
+      lines.push('- Use `search` when you need up-to-date information from the internet.')
+    }
+    if (hasWebFetch) {
+      lines.push('- Use `web_fetch` when you need to read a specific webpage in detail.')
+    }
+    lines.push('- Prefer local tools (read_file, grep) over web tools when the information is already in the project.')
+  }
+
+  // 针对 replace 工具的指南
+  const hasReplace = tools.some((t) => t.name === 'replace')
+  if (hasReplace) {
+    lines.push('')
+    lines.push('## Replace Tool Guidelines')
+    lines.push('- Use `replace` for precise text substitutions in existing files.')
+    lines.push('- For large rewrites, use `write_file` instead.')
+  }
+
+  return lines.join('\n')
+}
+
+const DYNAMIC_SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_SYSTEM_PROMPT, toolRegistry)
 
 /** 创建 ReAct Agent 实例，负责多轮推理循环 */
 const agent = new ReActAgent({
   defaultModel: DEFAULT_MODEL,
-  defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+  defaultSystemPrompt: DYNAMIC_SYSTEM_PROMPT,
   maxSteps: MAX_AGENT_STEPS,
   maxTokens: MAX_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
@@ -128,7 +196,7 @@ app.get('/api/config', (_req, res) => {
     appTitle: APP_TITLE,
     configured: CONFIGURED,
     model: DEFAULT_MODEL,
-    defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+    defaultSystemPrompt: DYNAMIC_SYSTEM_PROMPT,
     maxAgentSteps: MAX_AGENT_STEPS,
     tools: toolRegistry.map((tool) => ({
       name: tool.name,
@@ -196,7 +264,7 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
       session.title = sanitizeTitle(req.body.title) || session.title
     }
     if (typeof req.body?.systemPrompt === 'string') {
-      session.systemPrompt = req.body.systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT
+      session.systemPrompt = req.body.systemPrompt.trim() || DYNAMIC_SYSTEM_PROMPT
     }
     if (typeof req.body?.model === 'string' && req.body.model.trim()) {
       session.model = req.body.model.trim()
