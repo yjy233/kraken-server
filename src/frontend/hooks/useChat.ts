@@ -6,6 +6,7 @@ interface ChatState {
   sending: boolean
   error: string | null
   runtimeEvents: RuntimeEvent[]
+  streamingText: string
 }
 
 export function useChat(
@@ -17,6 +18,7 @@ export function useChat(
     sending: false,
     error: null,
     runtimeEvents: [],
+    streamingText: '',
   })
 
   const abortRef = useRef<(() => void) | null>(null)
@@ -25,7 +27,7 @@ export function useChat(
     async (message: string, systemPrompt: string) => {
       if (!message.trim()) return
 
-      setState({ sending: true, error: null, runtimeEvents: [] })
+      setState({ sending: true, error: null, runtimeEvents: [], streamingText: '' })
 
       // 乐观插入用户消息到当前会话
       const optimisticUserMsg: SessionMessage = {
@@ -56,18 +58,25 @@ export function useChat(
 
       abortRef.current = apiStreamChat(payload, {
         onEvent: (event, data) => {
-          setState((prev) => ({
-            ...prev,
-            runtimeEvents: [...prev.runtimeEvents, { event, data, at: new Date().toISOString() }].slice(-80),
-          }))
+          setState((prev) => {
+            const next: ChatState = {
+              ...prev,
+              runtimeEvents: [...prev.runtimeEvents, { event, data, at: new Date().toISOString() }].slice(-80),
+            }
+            // 提取 assistant 流式文本
+            if (event === 'assistant:delta') {
+              next.streamingText = (data as any).text || ''
+            }
+            return next
+          })
         },
         onComplete: async (data) => {
           onSessionUpdate(data.session)
           await onSessionsRefresh()
-          setState((prev) => ({ ...prev, sending: false }))
+          setState((prev) => ({ ...prev, sending: false, streamingText: '' }))
         },
         onError: (error) => {
-          setState((prev) => ({ ...prev, sending: false, error: error.message }))
+          setState((prev) => ({ ...prev, sending: false, error: error.message, streamingText: '' }))
         },
       })
     },
@@ -77,7 +86,7 @@ export function useChat(
   const cancel = useCallback(() => {
     abortRef.current?.()
     abortRef.current = null
-    setState((prev) => ({ ...prev, sending: false }))
+    setState((prev) => ({ ...prev, sending: false, streamingText: '' }))
   }, [])
 
   const clearError = useCallback(() => {

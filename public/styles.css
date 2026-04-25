@@ -10,7 +10,7 @@
   --brand-light: #e8f4fd;
   --user-bubble: #0071e3;
   --user-text: #ffffff;
-  --assistant-bubble: #f2f2f7;
+  --assistant-bubble: #e5e5ea;
   --assistant-text: #1d1d1f;
   --danger: #ff3b30;
   --danger-bg: #fff0ef;
@@ -29,7 +29,8 @@
 
 html, body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -47,7 +48,9 @@ body {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   gap: 0;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -61,7 +64,8 @@ body {
 .chat-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
   background: var(--bg);
 }
@@ -328,54 +332,96 @@ body {
   word-break: break-word;
 }
 
-/* ─── Trace Card ─────────────────────────────────── */
+/* ─── Agent Reply (Streaming) ────────────────────── */
 
-.trace-card {
+.agent-reply {
   align-self: flex-start;
-  max-width: min(720px, 100%);
-  width: 100%;
-  padding: 16px;
-  border-radius: var(--radius-sm);
-  background: var(--trace-bg);
-  border: 1px solid var(--trace-border);
-  font-size: 13px;
-}
-
-.trace-header {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--trace-border);
-}
-
-.trace-row {
+  background: #e0e0e6;
+  border-bottom-left-radius: 4px;
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--trace-border);
+  flex-direction: column;
+  gap: 0;
+  padding: 16px 18px;
 }
 
-.trace-row:last-child {
-  border-bottom: none;
+/* traces 放在普通 assistant 消息或 agent-reply 内部 */
+.message .agent-traces,
+.agent-reply .agent-traces {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-.trace-label {
-  flex-shrink: 0;
-  min-width: 110px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  font-size: 12px;
+/* 可折叠工具调用项 */
+.tool-call-item {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.5);
 }
 
-.trace-detail {
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms ease;
+}
+
+.tool-call-header:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.tool-call-arrow {
+  font-size: 10px;
   color: var(--text-tertiary);
-  line-height: 1.5;
+  width: 14px;
+  text-align: center;
+}
+
+.tool-call-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.tool-call-input {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 4px;
+}
+
+.tool-call-status {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.tool-call-detail {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.3);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.agent-answer {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 /* ─── Composer ───────────────────────────────────── */
@@ -437,6 +483,109 @@ body {
   color: var(--danger);
   font-size: 14px;
   font-weight: 500;
+}
+
+/* ─── Markdown ───────────────────────────────────── */
+
+.message-body h1,
+.message-body h2,
+.message-body h3,
+.message-body h4 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.message-body h1 { font-size: 1.4em; }
+.message-body h2 { font-size: 1.2em; }
+.message-body h3 { font-size: 1.1em; }
+
+.message-body p {
+  margin: 0 0 10px;
+}
+
+.message-body p:last-child {
+  margin-bottom: 0;
+}
+
+.message-body ul,
+.message-body ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.message-body li {
+  margin: 4px 0;
+}
+
+.message-body code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.message-body pre {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #1d1d1f;
+  color: #f5f5f7;
+  overflow-x: auto;
+}
+
+.message-body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.message-body blockquote {
+  margin: 10px 0;
+  padding: 8px 16px;
+  border-left: 3px solid var(--brand);
+  background: rgba(0, 113, 227, 0.06);
+  color: var(--text-secondary);
+}
+
+.message-body blockquote p {
+  margin: 0;
+}
+
+.message-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+}
+
+.message-body th,
+.message-body td {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.message-body th {
+  background: var(--surface-hover);
+  font-weight: 600;
+}
+
+.message-body a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.message-body a:hover {
+  text-decoration: underline;
+}
+
+.message-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
 }
 
 /* ─── Animations ─────────────────────────────────── */

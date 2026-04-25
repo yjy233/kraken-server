@@ -1,73 +1,177 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState, useCallback } from 'react'
+import { marked } from 'marked'
 import type { Session, SessionMessage, RuntimeEvent } from '../types.js'
 
 interface MessageListProps {
   session: Session | null
   runtimeEvents: RuntimeEvent[]
+  streamingText: string
+  sending: boolean
 }
 
-function summarizeEvent(entry: RuntimeEvent): string {
-  const data = entry.data as any
-  switch (entry.event) {
-    case 'run:step':
-      return `Step ${data.step} · ${data.phase || ''}`.trim()
-    case 'tool:requested':
-      return `${data.toolUse?.name || 'tool'} requested`
-    case 'tool:running':
-      return `${data.toolName} running`
-    case 'tool:result':
-      return `${data.toolName} ${data.isError ? 'failed' : 'finished'}`
-    case 'assistant:delta':
-      return truncate(collapseWhitespace(data.text || ''), 160)
-    case 'session':
-      return `${data.state}`
-    case 'run:start':
-      return `${data.model} · max ${data.maxAgentSteps} steps`
+/* ─── 工具调用记录 ─── */
+
+interface ToolCallRecord {
+  toolUseId: string
+  toolName: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  inputPreview?: string
+  outputPreview?: string
+}
+
+function buildInputPreview(toolName: string, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'shell_command':
+      return `$ ${input.command || ''}`
+    case 'read_file':
+      return `${input.path || ''}`
+    case 'write_file':
+      return `${input.path || ''}`
+    case 'search_files':
+      return `${input.pattern || ''}`
+    case 'project_overview':
+      return `depth=${input.max_depth || 2}`
     default:
-      return JSON.stringify(data)
+      return ''
   }
 }
 
-function collapseWhitespace(value: unknown): string {
-  return String(value || '').replace(/\s+/g, ' ').trim()
+function buildToolRecords(events: RuntimeEvent[]): ToolCallRecord[] {
+  const map = new Map<string, ToolCallRecord>()
+
+  for (const e of events) {
+    const data = e.data as any
+    if (e.event === 'tool:requested') {
+      map.set(data.toolUse.id, {
+        toolUseId: data.toolUse.id,
+        toolName: data.toolUse.name,
+        status: 'pending',
+        inputPreview: buildInputPreview(data.toolUse.name, data.toolUse.input),
+      })
+    } else if (e.event === 'tool:running') {
+      const r = map.get(data.toolUseId)
+      if (r) r.status = 'running'
+    } else if (e.event === 'tool:result') {
+      const r = map.get(data.toolUseId)
+      if (r) {
+        r.status = data.isError ? 'error' : 'done'
+        r.outputPreview = data.outputPreview
+      }
+    }
+  }
+
+  return Array.from(map.values())
 }
 
-function truncate(value: string, length: number): string {
-  return value.length > length ? `${value.slice(0, length - 1)}…` : value
+/* ─── Markdown 渲染 ─── */
+
+function renderMarkdown(text: string): { __html: string } {
+  const html = marked.parse(text, { async: false, breaks: true, gfm: true }) as string
+  return { __html: html }
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ session, runtimeEvents }) => {
+/* ─── 清理工具输出 ─── */
+
+function cleanToolOutput(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  let t = text.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+  t = t.replace(/\[\d+(;\d+)*m/g, '')
+  t = t.replace(/(?:_\s*-\s*){2,}/g, ' ')
+  t = t.replace(/[┌┐└┘│─┬┼┤├┴┬╔╗╚╝║═╦╩╠╣]/g, ' ')
+  t = t.replace(/[▀▄█▌▐░▒▓]/g, ' ')
+  t = t.replace(/\s+/g, ' ').trim()
+  return t
+}
+
+/* ─── 可折叠工具调用项 ─── */
+
+const ToolCallItem: React.FC<{ record: ToolCallRecord }> = ({ record }) => {
+  const [expanded, setExpanded] = useState(false)
+  const toggle = useCallback(() => setExpanded((p) => !p), [])
+
+  const statusIcon =
+    record.status === 'done' ? '✅' :
+    record.status === 'error' ? '❌' :
+    record.status === 'running' ? '⏳' : '🔧'
+
+  return (
+    <div className="tool-call-item">
+      <div className="tool-call-header" onClick={toggle}>
+        <span className="tool-call-arrow">{expanded ? '▼' : '▶'}</span>
+        <span className="tool-call-name">{record.toolName}</span>
+        {record.inputPreview && (
+          <span className="tool-call-input" title={record.inputPreview}>
+            {record.inputPreview}
+          </span>
+        )}
+        <span className="tool-call-status">{statusIcon}</span>
+      </div>
+      {expanded && record.outputPreview && (
+        <div className="tool-call-detail">{cleanToolOutput(record.outputPreview)}</div>
+      )}
+    </div>
+  )
+}
+
+/* ─── 主组件 ─── */
+
+export const MessageList: React.FC<MessageListProps> = ({
+  session,
+  runtimeEvents,
+  streamingText,
+  sending,
+}) => {
   const messages = session?.messages || []
   const listRef = useRef<HTMLDivElement>(null)
+  const toolRecords = buildToolRecords(runtimeEvents)
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
-  }, [messages.length, runtimeEvents.length])
+  }, [messages.length, runtimeEvents.length, streamingText])
+
+  const isStreaming = sending && (toolRecords.length > 0 || streamingText)
+  const lastMsgIsAssistant =
+    !sending &&
+    toolRecords.length > 0 &&
+    messages.length > 0 &&
+    messages[messages.length - 1].role === 'assistant'
 
   return (
     <section ref={listRef} className="message-list" aria-live="polite">
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isStreaming ? (
         <div className="hero-empty">
           <h3>What can I help you with?</h3>
           <p>Ask me to inspect code, search files, run commands, or help with any task.</p>
         </div>
       ) : (
         <>
-          {messages.map((msg, idx) => (
-            <MessageItem key={msg.id || idx} message={msg} />
-          ))}
+          {messages.map((msg, idx) => {
+            const attachTraces = lastMsgIsAssistant && idx === messages.length - 1
+            return (
+              <MessageItem
+                key={msg.id || idx}
+                message={msg}
+                toolRecords={attachTraces ? toolRecords : undefined}
+              />
+            )
+          })}
 
-          {runtimeEvents.length > 0 && (
-            <article className="trace-card">
-              <div className="trace-header">Runtime Trace</div>
-              {runtimeEvents.map((entry, idx) => (
-                <div key={idx} className="trace-row">
-                  <span className="trace-label">{entry.event}</span>
-                  <span className="trace-detail">{summarizeEvent(entry)}</span>
+          {isStreaming && (
+            <article className="message agent-reply" data-role="assistant">
+              {toolRecords.length > 0 && (
+                <div className="agent-traces">
+                  {toolRecords.map((r) => (
+                    <ToolCallItem key={r.toolUseId} record={r} />
+                  ))}
                 </div>
-              ))}
+              )}
+              {streamingText && (
+                <div className="agent-answer">
+                  <div className="message-body" dangerouslySetInnerHTML={renderMarkdown(streamingText)} />
+                </div>
+              )}
             </article>
           )}
         </>
@@ -76,10 +180,33 @@ export const MessageList: React.FC<MessageListProps> = ({ session, runtimeEvents
   )
 }
 
-const MessageItem: React.FC<{ message: SessionMessage }> = ({ message }) => {
+const MessageItem: React.FC<{
+  message: SessionMessage
+  toolRecords?: ToolCallRecord[]
+}> = ({ message, toolRecords }) => {
   return (
     <article className="message" data-role={message.role}>
-      <div className="message-body">{message.content}</div>
+      {message.role === 'assistant' && toolRecords && toolRecords.length > 0 && (
+        <div className="agent-traces">
+          {toolRecords.map((r) => (
+            <ToolCallItem key={r.toolUseId} record={r} />
+          ))}
+        </div>
+      )}
+      <div
+        className="message-body"
+        dangerouslySetInnerHTML={
+          message.role === 'assistant'
+            ? renderMarkdown(message.content)
+            : { __html: escapeHtml(message.content).replace(/\n/g, '<br>') }
+        }
+      />
     </article>
   )
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
 }

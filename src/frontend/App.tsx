@@ -11,14 +11,12 @@ export default function App() {
   const sessions = useSessions()
   const [systemPrompt, setSystemPrompt] = useState('')
 
-  // 当配置加载后，设置默认 system prompt
   useEffect(() => {
     if (config && !sessions.activeSession && !systemPrompt) {
       setSystemPrompt(config.defaultSystemPrompt)
     }
   }, [config, sessions.activeSession, systemPrompt])
 
-  // 当切换会话时，更新 system prompt 输入框
   useEffect(() => {
     if (sessions.activeSession) {
       setSystemPrompt(sessions.activeSession.systemPrompt || config?.defaultSystemPrompt || '')
@@ -41,12 +39,6 @@ export default function App() {
     const sp = systemPrompt || config?.defaultSystemPrompt || ''
     await sessions.create(sp)
   }, [chat, sessions, systemPrompt, config])
-
-  const handleSavePrompt = useCallback(async () => {
-    if (!sessions.activeSession) return
-    chat.clearError()
-    await sessions.patch(sessions.activeSession.id, systemPrompt)
-  }, [chat, sessions, systemPrompt])
 
   const handleOpenSession = useCallback(
     async (id: string) => {
@@ -105,7 +97,12 @@ export default function App() {
           </div>
         )}
 
-        <MessageList session={sessions.activeSession} runtimeEvents={chat.runtimeEvents} />
+        <MessageList
+          session={sessions.activeSession}
+          runtimeEvents={chat.runtimeEvents}
+          streamingText={chat.streamingText}
+          sending={chat.sending}
+        />
 
         <Composer sending={chat.sending} onSend={handleSend} onCancel={chat.cancel} />
       </main>
