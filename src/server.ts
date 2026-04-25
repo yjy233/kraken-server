@@ -232,6 +232,15 @@ app.delete('/api/sessions/:sessionId', async (req, res, next) => {
   }
 })
 
+app.delete('/api/sessions', async (_req, res, next) => {
+  try {
+    await deleteAllSessions()
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // ─── 路由：聊天（同步 & SSE 流式）──────────────────────
 
 /** 同步聊天接口 */
@@ -471,6 +480,16 @@ async function deleteSession(sessionId: string) {
   const filePath = sessionFilePath(sessionId)
   if (existsSync(filePath)) {
     await fs.unlink(filePath)
+  }
+}
+
+/** 删除全部会话 */
+async function deleteAllSessions() {
+  const entries = await fs.readdir(SESSION_DIR, { withFileTypes: true })
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith('.json')) {
+      await fs.unlink(path.join(SESSION_DIR, entry.name))
+    }
   }
 }
 

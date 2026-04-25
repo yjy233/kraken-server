@@ -51,6 +51,10 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await request(`/api/sessions/${sessionId}`, { method: 'DELETE' })
 }
 
+export async function deleteAllSessions(): Promise<void> {
+  await request('/api/sessions', { method: 'DELETE' })
+}
+
 export interface ChatPayload {
   sessionId: string | null
   systemPrompt: string

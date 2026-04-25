@@ -12,6 +12,10 @@ export default function App() {
   const [systemPrompt, setSystemPrompt] = useState('')
 
   useEffect(() => {
+    sessions.refresh()
+  }, [sessions.refresh])
+
+  useEffect(() => {
     if (config && !sessions.activeSession && !systemPrompt) {
       setSystemPrompt(config.defaultSystemPrompt)
     }
@@ -56,6 +60,11 @@ export default function App() {
     [chat, sessions]
   )
 
+  const handleClearAll = useCallback(async () => {
+    chat.clearError()
+    await sessions.clearAll()
+  }, [chat, sessions])
+
   const handleSend = useCallback(
     (message: string) => {
       chat.send(message, systemPrompt)
@@ -70,6 +79,7 @@ export default function App() {
         activeSession={sessions.activeSession}
         onOpenSession={handleOpenSession}
         onDeleteSession={handleDeleteSession}
+        onClearAll={handleClearAll}
         onRefresh={sessions.refresh}
       />
 

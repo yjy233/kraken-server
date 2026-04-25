@@ -6,6 +6,7 @@ interface SidebarProps {
   activeSession: Session | null
   onOpenSession: (id: string) => void
   onDeleteSession: (id: string) => void
+  onClearAll: () => void
   onRefresh: () => void
 }
 
@@ -14,6 +15,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeSession,
   onOpenSession,
   onDeleteSession,
+  onClearAll,
   onRefresh,
 }) => {
   return (
@@ -23,9 +25,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <img src="/logo.png" className="sidebar-logo" alt="Kraken" />
           <h2>Sessions</h2>
         </div>
-        <button className="icon-button" type="button" aria-label="Refresh sessions" onClick={onRefresh}>
-          Refresh
-        </button>
+        <div className="sidebar-actions">
+          <button className="icon-button" type="button" aria-label="Refresh sessions" onClick={onRefresh}>
+            Refresh
+          </button>
+          {sessions.length > 0 && (
+            <button
+              className="icon-button danger"
+              type="button"
+              aria-label="Clear all sessions"
+              title="Clear all"
+              onClick={onClearAll}
+            >
+              Clear all
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="session-list">
@@ -45,15 +60,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="session-preview">{s.preview || 'Empty session'}</span>
                 <span className="session-time">{new Date(s.updatedAt).toLocaleDateString()}</span>
               </div>
-              <span
-                className="session-delete"
+              <button
+                className="session-delete-btn"
+                type="button"
+                aria-label="Delete session"
                 onClick={(e) => {
                   e.stopPropagation()
                   onDeleteSession(s.id)
                 }}
               >
-                Delete
-              </span>
+                ×
+              </button>
             </button>
           ))
         )}

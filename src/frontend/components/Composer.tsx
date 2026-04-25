@@ -34,6 +34,9 @@ export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel })
   return (
     <form className="composer" autoComplete="off" onSubmit={handleSubmit}>
       <div className="composer-inner">
+        <button className="attach-button" type="button" aria-label="Add attachment">
+          +
+        </button>
         <textarea
           id="message-input"
           className="message-input"
@@ -44,8 +47,7 @@ export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel })
           onKeyDown={handleKeyDown}
           disabled={sending}
         />
-        <div className="composer-actions">
-          <span className="composer-hint">Cmd + Enter to send</span>
+        <div className="composer-right">
           {sending ? (
             <button className="send-button" type="button" onClick={onCancel}>
               Cancel
@@ -55,6 +57,7 @@ export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel })
               Send
             </button>
           )}
+          <span className="composer-hint">Cmd + Enter to send</span>
         </div>
       </div>
     </form>

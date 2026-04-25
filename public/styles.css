@@ -46,7 +46,7 @@ body {
 
 .page-shell {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 0;
   height: 100vh;
   max-height: 100vh;
@@ -85,6 +85,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .sidebar-logo {
@@ -171,22 +177,33 @@ body {
   color: var(--text-tertiary);
 }
 
-.session-delete {
-  font-size: 11px;
-  color: var(--danger);
-  opacity: 0;
-  transition: opacity 120ms ease;
+.session-delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
+  opacity: 0;
+  transition: all 120ms ease;
 }
 
-.session-delete:hover {
-  background: var(--danger-bg);
-}
-
-.session-item:hover .session-delete {
+.session-item:hover .session-delete-btn {
   opacity: 1;
+}
+
+.session-delete-btn:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 
 .empty-state {
@@ -223,6 +240,14 @@ body {
 .icon-button:hover {
   background: var(--surface-hover);
   color: var(--text);
+}
+
+.icon-button.danger {
+  color: var(--danger);
+}
+
+.icon-button.danger:hover {
+  background: var(--danger-bg);
 }
 
 .send-button {
@@ -474,12 +499,13 @@ body {
   max-width: 800px;
   margin: 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .message-input {
-  width: 100%;
+  flex: 1;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -500,14 +526,40 @@ body {
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
 }
 
-.composer-actions {
+.attach-button {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 20px;
+  font-weight: 300;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 10px;
+  transition: all 120ms ease;
+}
+
+.attach-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.composer-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 10px;
 }
 
 .composer-hint {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 

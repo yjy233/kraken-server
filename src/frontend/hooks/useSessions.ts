@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { Session, SessionSummary } from '../types.js'
-import { fetchSessions, createSession, fetchSession, updateSession, deleteSession as apiDeleteSession } from '../api.js'
+import { fetchSessions, createSession, fetchSession, updateSession, deleteSession as apiDeleteSession, deleteAllSessions as apiDeleteAllSessions } from '../api.js'
 
 export function useSessions() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -41,6 +41,12 @@ export function useSessions() {
     await refresh()
   }, [activeSession, refresh])
 
+  const clearAll = useCallback(async () => {
+    await apiDeleteAllSessions()
+    setSessions([])
+    setActiveSession(null)
+  }, [])
+
   const setSystemPrompt = useCallback((sessionId: string, systemPrompt: string) => {
     setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, systemPrompt } : prev))
   }, [])
@@ -55,6 +61,7 @@ export function useSessions() {
     create,
     patch,
     remove,
+    clearAll,
     setActiveSession,
     setSystemPrompt,
   }
