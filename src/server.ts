@@ -18,13 +18,13 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
-import type { AgentMessage } from './agent/types.js'
+import type { AgentMessage, ToolDefinition } from './agent/types.js'
 import { ReActAgent } from './agent/react-agent.js'
-import { PromptBuilder } from './agent/prompt-builder.js'
+import { PromptBuilder, extractBaseSystemPrompt } from './agent/prompt-builder.js'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
 import { buildSandboxPromptContext, buildSessionSandboxPolicy, ensureSandboxLayout, expandHomePath, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
-import type { SessionSandboxConfig } from './tools/types.js'
-import { discoverSkills } from './skills/registry.js'
+import type { SessionSandboxConfig, SessionSandboxPolicy } from './tools/types.js'
+import { getAvailableSkills } from './skills/manager.js'
 import type { SkillRuntimeState } from './skills/types.js'
 import {
   parseInteger,
@@ -111,25 +111,40 @@ interface Session {
 
 // ─── Skill 系统 ──────────────────────────────────────
 
-const AVAILABLE_SKILLS = discoverSkills()
-
 /** 构建动态 System Prompt */
-const promptBuilder = new PromptBuilder(
-  BASE_SYSTEM_PROMPT,
-  createToolRegistry(TOOL_REGISTRY_OPTIONS),
-  AVAILABLE_SKILLS
-)
-const SYSTEM_PROMPT = promptBuilder.build()
+function buildSystemPrompt(basePrompt: string, tools: ToolDefinition[]): string {
+  return new PromptBuilder(
+    normalizeSystemPrompt(basePrompt),
+    tools,
+    getAvailableSkills()
+  ).build()
+}
+
+function buildDefaultSystemPrompt(): string {
+  return buildSystemPrompt(BASE_SYSTEM_PROMPT, createToolRegistry(TOOL_REGISTRY_OPTIONS))
+}
+
+function normalizeSystemPrompt(systemPrompt: string | undefined): string {
+  const normalized = extractBaseSystemPrompt(systemPrompt || '').trim()
+  return normalized || BASE_SYSTEM_PROMPT
+}
+
+function buildRuntimeSystemPrompt(basePrompt: string, tools: ToolDefinition[], sandboxPolicy: SessionSandboxPolicy): string {
+  return [
+    buildSystemPrompt(basePrompt, tools),
+    '',
+    buildSandboxPromptContext(sandboxPolicy),
+  ].join('\n')
+}
 
 /** 创建 ReAct Agent 实例，负责多轮推理循环 */
 const agent = new ReActAgent({
   defaultModel: DEFAULT_MODEL,
-  defaultSystemPrompt: SYSTEM_PROMPT,
+  defaultSystemPrompt: BASE_SYSTEM_PROMPT,
   maxSteps: MAX_AGENT_STEPS,
   maxTokens: MAX_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
   toolRegistry: [],
-  availableSkills: AVAILABLE_SKILLS,
 })
 
 // ─── Express 应用 ────────────────────────────────────
@@ -163,12 +178,12 @@ app.get('/api/config', (_req, res) => {
     appTitle: APP_TITLE,
     configured: CONFIGURED,
     model: DEFAULT_MODEL,
-    defaultSystemPrompt: SYSTEM_PROMPT,
+    defaultSystemPrompt: normalizeSystemPrompt(undefined),
     maxAgentSteps: MAX_AGENT_STEPS,
     defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
     sandboxEnabled: ENABLE_PATH_SANDBOX,
     seatbeltEnabled: ENABLE_SEATBELT,
-    skills: AVAILABLE_SKILLS.map((skill) => ({
+    skills: getAvailableSkills().map((skill) => ({
       name: skill.name,
       description: skill.description,
     })),
@@ -206,7 +221,7 @@ app.post('/api/sessions', async (req, res, next) => {
   try {
     const session = createSession({
       title: typeof req.body?.title === 'string' ? req.body.title : '',
-      systemPrompt: typeof req.body?.systemPrompt === 'string' ? req.body.systemPrompt : SYSTEM_PROMPT,
+      systemPrompt: typeof req.body?.systemPrompt === 'string' ? req.body.systemPrompt : undefined,
       model: typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL,
       sandbox: normalizeSessionSandboxConfig(req.body?.sandbox),
     })
@@ -239,7 +254,7 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
       session.title = sanitizeTitle(req.body.title) || session.title
     }
     if (typeof req.body?.systemPrompt === 'string') {
-      session.systemPrompt = req.body.systemPrompt.trim() || SYSTEM_PROMPT
+      session.systemPrompt = normalizeSystemPrompt(req.body.systemPrompt)
     }
     if (typeof req.body?.model === 'string' && req.body.model.trim()) {
       session.model = req.body.model.trim()
@@ -369,13 +384,13 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
   if (!session) {
     session = createSession({
       title: sanitizeTitle(rawMessage),
-      systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : SYSTEM_PROMPT,
+      systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
       model: requestedModel,
       sandbox: requestSandbox,
     })
   }
   if (typeof payload.systemPrompt === 'string') {
-    session.systemPrompt = payload.systemPrompt.trim() || SYSTEM_PROMPT
+    session.systemPrompt = normalizeSystemPrompt(payload.systemPrompt)
   }
   if (requestSandbox !== undefined) {
     session.sandbox = requestSandbox
@@ -396,10 +411,11 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
     loadedSkillNames: new Set(session.loadedSkills || []),
   }
 
+  const availableSkills = getAvailableSkills()
   const toolRegistry = createToolRegistry(TOOL_REGISTRY_OPTIONS, {
     sessionId: session.id,
     sessionSandbox: session.sandbox,
-    availableSkills: AVAILABLE_SKILLS,
+    availableSkills,
     skillState,
   })
 
@@ -427,11 +443,7 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
   const result = await agent.run({
     messages: agentMessages,
     model: session.model,
-    systemPrompt: [
-      session.systemPrompt,
-      '',
-      buildSandboxPromptContext(sandboxPolicy),
-    ].join('\n'),
+    systemPrompt: buildRuntimeSystemPrompt(session.systemPrompt, toolRegistry, sandboxPolicy),
     tools: toolRegistry,
     skillState,
     emit: emit ?? undefined,
@@ -478,13 +490,13 @@ function buildAgentMessages(sessionMessages: SessionMessage[], maxMessages: numb
 }
 
 /** 创建新会话 */
-function createSession({ title, systemPrompt, model, sandbox }: { title: string; systemPrompt: string; model: string; sandbox?: SessionSandboxConfig | undefined }): Session {
+function createSession({ title, systemPrompt, model, sandbox }: { title: string; systemPrompt?: string | undefined; model: string; sandbox?: SessionSandboxConfig | undefined }): Session {
   const timestamp = new Date().toISOString()
   return {
     id: crypto.randomUUID(),
     title: sanitizeTitle(title) || 'New chat',
     model: model || DEFAULT_MODEL,
-    systemPrompt: systemPrompt.trim() || SYSTEM_PROMPT,
+    systemPrompt: normalizeSystemPrompt(systemPrompt),
     sandbox,
     loadedSkills: [],
     createdAt: timestamp,
@@ -540,6 +552,7 @@ async function loadSession(sessionId: string): Promise<Session | null> {
   }
   const raw = await fs.readFile(filePath, 'utf8')
   const session = JSON.parse(raw) as Session
+  session.systemPrompt = normalizeSystemPrompt(session.systemPrompt)
   session.loadedSkills = Array.isArray(session.loadedSkills)
     ? session.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
     : []

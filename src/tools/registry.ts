@@ -17,9 +17,11 @@ import { todoTool } from './todo.js'
 import { searchTool } from './search.js'
 import { replaceTool } from './replace.js'
 import { skillTool } from './skill.js'
+import { skillInstallTool } from './skill-install.js'
 import { buildSessionSandboxPolicy } from './sandbox.js'
 import type { SessionSandboxConfig } from './types.js'
 import type { Skill, SkillRuntimeState } from '../skills/types.js'
+import { refreshSkills } from '../skills/manager.js'
 
 export interface CreateRegistryOptions {
   rootDir: string
@@ -55,6 +57,7 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     searchTool,
     replaceTool,
     skillTool,
+    skillInstallTool,
   ]
 
   const tools = allTools.filter((tool) => {
@@ -63,6 +66,7 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
   })
 
   const sessionId = request?.sessionId || 'ephemeral-session'
+  let availableSkills = request?.availableSkills || []
   const sandboxPolicy = buildSessionSandboxPolicy({
     sessionId,
     sessionSandbox: request?.sessionSandbox,
@@ -80,8 +84,13 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     sessionId,
     sessionSandbox: request?.sessionSandbox,
     sandboxPolicy,
-    availableSkills: request?.availableSkills || [],
+    availableSkills,
     skillState: request?.skillState || { loadedSkillNames: new Set<string>() },
+    refreshSkills,
+    setAvailableSkills: (skills: Skill[]) => {
+      availableSkills = skills
+      ctx.availableSkills = skills
+    },
   }
 
   // 注入上下文：包装 execute 方法，并映射为 ToolDefinition 格式

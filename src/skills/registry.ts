@@ -9,19 +9,22 @@ import path from 'node:path'
 import os from 'node:os'
 import type { Skill } from './types.js'
 
+export function getSkillDiscoveryDirs(): string[] {
+  return [
+    process.env.KRAKEN_SKILLS_DIR,
+    path.join(process.cwd(), 'skills'),
+    path.join(os.homedir(), '.config', 'kraken', 'skills'),
+    path.join(os.homedir(), '.kraken', 'skills'),
+  ].filter((d): d is string => Boolean(d))
+}
+
 /**
  * 按优先级扫描所有 Skill 目录，返回去重后的 Skill 列表。
  * 高优先级目录中的同名 Skill 覆盖低优先级目录中的 Skill。
  */
 export function discoverSkills(): Skill[] {
   const skillMap = new Map<string, Skill>()
-
-  const dirs = [
-    process.env.KRAKEN_SKILLS_DIR,
-    path.join(process.cwd(), 'skills'),
-    path.join(os.homedir(), '.config', 'kraken', 'skills'),
-    path.join(os.homedir(), '.kraken', 'skills'),
-  ].filter((d): d is string => Boolean(d))
+  const dirs = getSkillDiscoveryDirs()
 
   for (const dir of [...dirs].reverse()) {
     if (!fs.existsSync(dir)) continue
@@ -31,7 +34,7 @@ export function discoverSkills(): Skill[] {
       const skillMdPath = path.join(skillPath, 'SKILL.md')
       if (fs.existsSync(skillMdPath)) {
         try {
-          const skill = parseSkill(skillMdPath)
+          const skill = parseSkillFile(skillMdPath)
           skillMap.set(skill.name, skill)
         } catch {
           // 忽略格式错误的 Skill
@@ -44,7 +47,7 @@ export function discoverSkills(): Skill[] {
 }
 
 /** 解析单个 SKILL.md 文件 */
-function parseSkill(skillMdPath: string): Skill {
+export function parseSkillFile(skillMdPath: string): Skill {
   const content = fs.readFileSync(skillMdPath, 'utf8')
   const dirPath = path.dirname(skillMdPath)
 

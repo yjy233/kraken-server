@@ -27,7 +27,6 @@ export class ReActAgent {
     const emit = params.emit
     const tools = params.tools || this.config.toolRegistry
     const currentSystemPrompt = baseSystemPrompt
-    const loadedSkills = Array.from(params.skillState?.loadedSkillNames || [])
 
     // 初始化运行记录
     const run: RunResult = {
@@ -81,6 +80,7 @@ export class ReActAgent {
       if (result.done) {
         const finalText = result.assistantText || 'The model returned without text.'
         run.finalText = finalText
+        const loadedSkills = Array.from(params.skillState?.loadedSkillNames || [])
         return { reply: finalText, run, finalMessages: currentMessages, loadedSkills }
       }
     }
@@ -88,6 +88,7 @@ export class ReActAgent {
     // 达到最大步数限制，返回兜底消息
     const exhaustedMessage = `Agent stopped after reaching the maximum step limit (${this.config.maxSteps}).`
     run.finalText = exhaustedMessage
+    const loadedSkills = Array.from(params.skillState?.loadedSkillNames || [])
     return { reply: exhaustedMessage, run, finalMessages: currentMessages, loadedSkills }
   }
 }

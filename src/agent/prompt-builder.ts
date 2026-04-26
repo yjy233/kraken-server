@@ -1,6 +1,15 @@
 import type { Skill } from '../skills/types.js'
 import type { ToolDefinition } from './types.js'
 
+const WORKING_PROCESS_HEADER = '## Working Process'
+const AVAILABLE_TOOLS_HEADER = '## Available Tools'
+const DEFAULT_WORKING_PROCESS_LINES = [
+  '1. For multi-step tasks, first use `todo` to create a task list.',
+  '2. Gather information using available tools.',
+  '3. Mark todos as done when steps complete.',
+  '4. Provide a concise final answer.',
+]
+
 /**
  * PromptBuilder —— 根据可用工具动态构建 System Prompt
  *
@@ -31,6 +40,11 @@ export class PromptBuilder {
       sections.push('', skillsMetaSection)
     }
 
+    const skillSection = this.buildSkillGuidelines()
+    if (skillSection) {
+      sections.push('', skillSection)
+    }
+
     const todoSection = this.buildTodoGuidelines()
     if (todoSection) {
       sections.push('', todoSection)
@@ -52,17 +66,14 @@ export class PromptBuilder {
   /** 通用工作流指导 */
   private buildWorkingProcess(): string {
     return [
-      '## Working Process',
-      '1. For multi-step tasks, first use `todo` to create a task list.',
-      '2. Gather information using available tools.',
-      '3. Mark todos as done when steps complete.',
-      '4. Provide a concise final answer.',
+      WORKING_PROCESS_HEADER,
+      ...DEFAULT_WORKING_PROCESS_LINES,
     ].join('\n')
   }
 
   /** 可用工具列表 */
   private buildAvailableTools(): string {
-    const lines = ['## Available Tools']
+    const lines = [AVAILABLE_TOOLS_HEADER]
     for (const tool of this.tools) {
       lines.push(`- ${tool.name}: ${tool.description}`)
     }
@@ -121,7 +132,46 @@ export class PromptBuilder {
     return lines.join('\n')
   }
 
+  /** skill / skill_install 工具使用指南 */
+  private buildSkillGuidelines(): string | null {
+    const hasSkill = this.hasTool('skill')
+    const hasSkillInstall = this.hasTool('skill_install')
+    if (!hasSkill && !hasSkillInstall) return null
+
+    const lines = ['## Skill Tool Guidelines']
+    if (hasSkill) {
+      lines.push('- Use `skill` with `action="activate"` before relying on an installed skill.')
+      lines.push('- Only use `skill` with `action="read_reference"` after that skill has been activated.')
+    }
+    if (hasSkillInstall) {
+      lines.push('- If the required skill is not listed under `Available Skills`, consider `skill_install` to add it.')
+      lines.push('- Use `skill_install` only when the user asked to install a skill or clearly approved that setup change.')
+      lines.push('- If the user provides a ClawHub page or slug such as `owner/skill`, use `skill_install` with `source="clawhub"` and pass that slug or URL in `slug`.')
+      lines.push('- Use `source="github"` only when you have a verified GitHub repository and a verified path to the skill directory inside that repo.')
+    }
+    return lines.join('\n')
+  }
+
   private hasTool(name: string): boolean {
     return this.tools.some((t) => t.name === name)
   }
+}
+
+export function extractBaseSystemPrompt(prompt: string): string {
+  const trimmed = prompt.trim()
+  if (!trimmed) {
+    return trimmed
+  }
+
+  if (!DEFAULT_WORKING_PROCESS_LINES.every((line) => trimmed.includes(line))) {
+    return trimmed
+  }
+
+  const workingProcessIndex = trimmed.indexOf(`\n${WORKING_PROCESS_HEADER}\n`)
+  const availableToolsIndex = trimmed.indexOf(`\n${AVAILABLE_TOOLS_HEADER}\n`)
+  if (workingProcessIndex === -1 || availableToolsIndex <= workingProcessIndex) {
+    return trimmed
+  }
+
+  return trimmed.slice(0, workingProcessIndex).trim()
 }
