@@ -1,8 +1,7 @@
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import type { SessionSandboxConfig, SessionSandboxPolicy } from './types.js'
-import { isRecord } from '../utils/helpers.js'
+import { expandHomePath, isRecord } from '../utils/helpers.js'
 
 const DEFAULT_SENSITIVE_PATHS = [
   '~/.ssh',
@@ -14,16 +13,6 @@ const DEFAULT_SENSITIVE_PATHS = [
   '/etc',
   '/private/etc',
 ]
-
-export function expandHomePath(inputPath: string): string {
-  const value = inputPath.trim()
-  if (!value) return value
-  if (value === '~') return os.homedir()
-  if (value.startsWith('~/')) {
-    return path.join(os.homedir(), value.slice(2))
-  }
-  return value
-}
 
 export function normalizeHostPath(inputPath: string): string {
   return path.resolve(expandHomePath(inputPath))

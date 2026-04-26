@@ -142,12 +142,14 @@ export class PromptBuilder {
     if (hasSkill) {
       lines.push('- Use `skill` with `action="activate"` before relying on an installed skill.')
       lines.push('- Only use `skill` with `action="read_reference"` after that skill has been activated.')
+      lines.push('- If the user asks to create or update a skill, activate `skill-creator` first when it is available.')
     }
     if (hasSkillInstall) {
       lines.push('- If the required skill is not listed under `Available Skills`, consider `skill_install` to add it.')
       lines.push('- Use `skill_install` only when the user asked to install a skill or clearly approved that setup change.')
       lines.push('- If the user provides a ClawHub page or slug such as `owner/skill`, use `skill_install` with `source="clawhub"` and pass that slug or URL in `slug`.')
       lines.push('- Use `source="github"` only when you have a verified GitHub repository and a verified path to the skill directory inside that repo.')
+      lines.push('- For local skill authoring, prefer `skill_install` actions in this order: `init_local`, then `validate_local`, then `link` or `install`.')
     }
     return lines.join('\n')
   }

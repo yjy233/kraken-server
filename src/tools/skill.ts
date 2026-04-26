@@ -1,4 +1,4 @@
-import { readSkillReference } from '../skills/registry.js'
+import { describeSkillResources, readSkillReference } from '../skills/registry.js'
 import type { Tool } from './types.js'
 
 export const skillTool: Tool = {
@@ -43,6 +43,10 @@ export const skillTool: Tool = {
           `Activated skill: ${skill.name}`,
           '',
           `Description: ${skill.description}`,
+          '',
+          ...describeSkillResources(skill),
+          '',
+          'Instructions:',
           '',
           skill.body,
         ].join('\n'),

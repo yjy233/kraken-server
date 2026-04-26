@@ -6,17 +6,8 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import type { Skill } from './types.js'
-
-export function getSkillDiscoveryDirs(): string[] {
-  return [
-    process.env.KRAKEN_SKILLS_DIR,
-    path.join(process.cwd(), 'skills'),
-    path.join(os.homedir(), '.config', 'kraken', 'skills'),
-    path.join(os.homedir(), '.kraken', 'skills'),
-  ].filter((d): d is string => Boolean(d))
-}
+import { getSkillDiscoveryDirs } from './paths.js'
 
 /**
  * 按优先级扫描所有 Skill 目录，返回去重后的 Skill 列表。
@@ -76,7 +67,7 @@ export function parseSkillFile(skillMdPath: string): Skill {
 }
 
 /** 从 YAML 文本中提取简单字段值，支持 `field: |` 多行块 */
-function extractYamlField(yaml: string, field: string): string | undefined {
+export function extractYamlField(yaml: string, field: string): string | undefined {
   const lines = yaml.split('\n')
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
@@ -104,6 +95,37 @@ function extractYamlField(yaml: string, field: string): string | undefined {
   return undefined
 }
 
+export function describeSkillResources(skill: Skill): string[] {
+  const sections = ['scripts', 'references', 'assets']
+  const lines = [`Skill root: ${skill.dirPath}`, 'Resources:']
+  let hasResources = false
+
+  for (const section of sections) {
+    const sectionPath = path.join(skill.dirPath, section)
+    if (!fs.existsSync(sectionPath) || !fs.statSync(sectionPath).isDirectory()) {
+      continue
+    }
+
+    const entries = listResourceEntries(sectionPath, section, 2)
+    hasResources = true
+    if (entries.length === 0) {
+      lines.push(`- ${section}/ (empty)`)
+      continue
+    }
+
+    lines.push(`- ${section}/`)
+    for (const entry of entries) {
+      lines.push(`  - ${entry}`)
+    }
+  }
+
+  if (!hasResources) {
+    lines.push('- No bundled resources found.')
+  }
+
+  return lines
+}
+
 /**
  * 读取指定 Skill 的 reference 文件，仅允许访问其 `references/` 子目录。
  */
@@ -123,4 +145,30 @@ export function readSkillReference(skill: Skill, refPath: string): string {
   }
 
   return fs.readFileSync(fullPath, 'utf8')
+}
+
+function listResourceEntries(rootDir: string, prefix: string, maxDepth: number): string[] {
+  const entries: string[] = []
+
+  function visit(currentDir: string, depth: number): void {
+    if (depth > maxDepth) {
+      return
+    }
+
+    const dirEntries = fs.readdirSync(currentDir, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith('.'))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    for (const entry of dirEntries) {
+      const fullPath = path.join(currentDir, entry.name)
+      const relative = path.relative(path.dirname(rootDir), fullPath)
+      entries.push(entry.isDirectory() ? `${relative}/` : relative)
+      if (entry.isDirectory()) {
+        visit(fullPath, depth + 1)
+      }
+    }
+  }
+
+  visit(rootDir, 1)
+  return entries
 }

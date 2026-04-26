@@ -1,16 +1,17 @@
-import { installSkillFromClawHub, installSkillFromGitHub } from '../skills/install.js'
+import { initSkill, normalizeSkillName, validateSkillDir } from '../skills/authoring.js'
+import { installSkillFromClawHub, installSkillFromGitHub, linkSkillFromLocalDir } from '../skills/install.js'
 import { getAvailableSkills, getSkillInstallRoot } from '../skills/manager.js'
 import type { Tool } from './types.js'
 
 export const skillInstallTool: Tool = {
   name: 'skill_install',
-  description: 'Install a skill from ClawHub or from a GitHub repository path into the local skill registry and refresh available skills.',
+  description: 'Install, initialize, validate, or link a skill in the local skill registry.',
   inputSchema: {
     type: 'object',
     properties: {
       action: {
         type: 'string',
-        enum: ['install', 'inspect_installed'],
+        enum: ['install', 'inspect_installed', 'validate_local', 'link', 'init_local'],
         description: 'Skill installation action.',
       },
       source: {
@@ -24,7 +25,7 @@ export const skillInstallTool: Tool = {
       },
       path: {
         type: 'string',
-        description: 'Path to the skill directory inside the repo. Required for github installs.',
+        description: 'Local skill directory path, or the path to the skill directory inside the repo. Required for github installs and local actions.',
       },
       slug: {
         type: 'string',
@@ -41,6 +42,14 @@ export const skillInstallTool: Tool = {
       force: {
         type: 'boolean',
         description: 'Overwrite an existing installed skill.',
+      },
+      base_dir: {
+        type: 'string',
+        description: 'Base directory for creating a new local skill. Required for init_local.',
+      },
+      description: {
+        type: 'string',
+        description: 'Optional description to seed a newly initialized skill.',
       },
     },
     required: ['action'],
@@ -110,6 +119,94 @@ export const skillInstallTool: Tool = {
       }
     }
 
+    if (action === 'init_local') {
+      const skillName = normalizeSkillName(String(input.name || '').trim())
+      const baseDir = String(input.base_dir || '').trim()
+      if (!baseDir) {
+        throw new Error('base_dir is required')
+      }
+
+      const initParams: {
+        skillName: string
+        baseDir: string
+        force: boolean
+        description?: string
+      } = {
+        skillName,
+        baseDir,
+        force: Boolean(input.force),
+      }
+      if (typeof input.description === 'string' && input.description.trim()) {
+        initParams.description = input.description.trim()
+      }
+
+      const result = await initSkill(initParams)
+      const validation = await validateSkillDir(result.skillDir)
+
+      return {
+        output: [
+          `Initialized skill: ${result.skill.name}`,
+          `Directory: ${result.skillDir}`,
+          `Description: ${result.skill.description}`,
+          `Validation: ${validation.valid ? 'passed' : 'failed'}`,
+          ...formatValidationMessages(validation),
+        ].join('\n'),
+      }
+    }
+
+    if (action === 'validate_local') {
+      const targetPath = String(input.path || '').trim()
+      if (!targetPath) {
+        throw new Error('path is required')
+      }
+      const validation = await validateSkillDir(targetPath)
+      return {
+        output: [
+          `Validation: ${validation.valid ? 'passed' : 'failed'}`,
+          ...(validation.skill ? [
+            `Skill: ${validation.skill.name}`,
+            `Description: ${validation.skill.description}`,
+            `Directory: ${validation.skill.dirPath}`,
+          ] : []),
+          ...formatValidationMessages(validation),
+        ].join('\n'),
+      }
+    }
+
+    if (action === 'link') {
+      const targetPath = String(input.path || '').trim()
+      if (!targetPath) {
+        throw new Error('path is required')
+      }
+
+      const validation = await validateSkillDir(targetPath)
+      if (!validation.valid) {
+        throw new Error([
+          'Local skill validation failed before linking:',
+          ...formatValidationMessages(validation),
+        ].join('\n'))
+      }
+
+      const installRoot = getSkillInstallRoot()
+      const linked = await linkSkillFromLocalDir({
+        sourceDir: targetPath,
+        installRoot,
+        force: Boolean(input.force),
+      })
+
+      const refreshed = ctx.refreshSkills()
+      ctx.setAvailableSkills(refreshed)
+
+      return {
+        output: [
+          `Linked skill: ${linked.skill.name}`,
+          `Directory: ${linked.installDir}`,
+          `Description: ${linked.skill.description}`,
+          `Available skills: ${refreshed.map((skill) => skill.name).join(', ')}`,
+        ].join('\n'),
+      }
+    }
+
     if (action === 'inspect_installed') {
       const name = String(input.name || '').trim()
       if (!name) {
@@ -130,4 +227,21 @@ export const skillInstallTool: Tool = {
 
     throw new Error(`Unsupported skill_install action: ${action}`)
   },
+}
+
+function formatValidationMessages(validation: {
+  errors: string[]
+  warnings: string[]
+}): string[] {
+  const lines: string[] = []
+  for (const error of validation.errors) {
+    lines.push(`Error: ${error}`)
+  }
+  for (const warning of validation.warnings) {
+    lines.push(`Warning: ${warning}`)
+  }
+  if (lines.length === 0) {
+    lines.push('No validation issues found.')
+  }
+  return lines
 }

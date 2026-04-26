@@ -22,7 +22,7 @@ import type { AgentMessage, ToolDefinition } from './agent/types.js'
 import { ReActAgent } from './agent/react-agent.js'
 import { PromptBuilder, extractBaseSystemPrompt } from './agent/prompt-builder.js'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
-import { buildSandboxPromptContext, buildSessionSandboxPolicy, ensureSandboxLayout, expandHomePath, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
+import { buildSandboxPromptContext, buildSessionSandboxPolicy, ensureSandboxLayout, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
 import type { SessionSandboxConfig, SessionSandboxPolicy } from './tools/types.js'
 import { getAvailableSkills } from './skills/manager.js'
 import type { SkillRuntimeState } from './skills/types.js'
@@ -34,6 +34,7 @@ import {
   isRecord,
   collapseWhitespace,
   truncate,
+  expandHomePath,
 } from './utils/helpers.js'
 
 // ─── 路径与环境 ───────────────────────────────────────

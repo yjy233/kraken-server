@@ -4,6 +4,8 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 /** 将未知值解析为整数，失败时返回 fallback */
 export function parseInteger(value: unknown, fallback: number): number {
@@ -53,6 +55,17 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 /** 校验会话 ID 是否只包含安全字符 */
 export function isSafeSessionId(value: unknown): boolean {
   return /^[a-zA-Z0-9-]+$/.test(String(value || ''))
+}
+
+/** 展开 `~` 为当前用户 home 目录，并返回绝对路径 */
+export function expandHomePath(inputPath: string): string {
+  const value = inputPath.trim()
+  if (!value) return value
+  if (value === '~') return os.homedir()
+  if (value.startsWith('~/')) {
+    return path.join(os.homedir(), value.slice(2))
+  }
+  return value
 }
 
 /** 加载 .env 文件到 process.env（不会覆盖已有环境变量） */

@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { parseSkillFile } from './registry.js'
 import type { Skill } from './types.js'
+import { getDefaultSkillInstallRoot, resolveSkillInstallRoot } from './paths.js'
 
 const GITHUB_ARCHIVE_REF = 'main'
 const CLAWHUB_DOWNLOAD_BASE_URL = 'https://wry-manatee-359.convex.site/api/v1/download?slug='
@@ -22,15 +23,11 @@ export interface InstalledSkillResult {
   installDir: string
 }
 
-export function getDefaultSkillInstallRoot(): string {
-  return path.join(os.homedir(), 'kraken', 'skills')
-}
-
 export async function installSkillFromGitHub(params: InstallSkillParams): Promise<InstalledSkillResult> {
   const repo = normalizeRepo(requireString(params.repo, 'repo is required for github installs'))
   const skillPath = normalizeRemoteSkillPath(requireString(params.skillPath, 'path is required for github installs'))
   const ref = params.ref?.trim() || GITHUB_ARCHIVE_REF
-  const installRoot = path.resolve(params.installRoot || getDefaultSkillInstallRoot())
+  const installRoot = resolveSkillInstallRoot(params.installRoot)
 
   await fs.mkdir(installRoot, { recursive: true })
 
@@ -57,7 +54,7 @@ export async function installSkillFromGitHub(params: InstallSkillParams): Promis
 }
 
 export async function installSkillFromClawHub(params: InstallSkillParams): Promise<InstalledSkillResult> {
-  const installRoot = path.resolve(params.installRoot || getDefaultSkillInstallRoot())
+  const installRoot = resolveSkillInstallRoot(params.installRoot)
   const slugCandidates = buildClawHubSlugCandidates(params.clawhubSlug)
 
   await fs.mkdir(installRoot, { recursive: true })
@@ -159,6 +156,50 @@ async function copyDirectory(sourceDir: string, targetDir: string): Promise<void
     if (entry.isFile()) {
       await fs.copyFile(sourcePath, targetPath)
     }
+  }
+}
+
+export async function installSkillFromLocalDir(params: {
+  sourceDir: string
+  installRoot?: string
+  force?: boolean
+}): Promise<InstalledSkillResult> {
+  const sourceDir = path.resolve(params.sourceDir)
+  const installRoot = resolveSkillInstallRoot(params.installRoot)
+
+  return installExtractedSkill({
+    sourceDir,
+    installRoot,
+    force: Boolean(params.force),
+  })
+}
+
+export async function linkSkillFromLocalDir(params: {
+  sourceDir: string
+  installRoot?: string
+  force?: boolean
+}): Promise<InstalledSkillResult> {
+  const sourceDir = path.resolve(params.sourceDir)
+  const installRoot = resolveSkillInstallRoot(params.installRoot)
+  const skill = await parseSkillFile(path.join(sourceDir, 'SKILL.md'))
+  const installDir = path.join(installRoot, skill.name)
+
+  await fs.mkdir(installRoot, { recursive: true })
+
+  if (await pathExists(installDir)) {
+    if (!params.force) {
+      throw new Error(`Skill already exists: ${installDir}`)
+    }
+    await fs.rm(installDir, { recursive: true, force: true })
+  }
+
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+  await fs.symlink(sourceDir, installDir, linkType)
+
+  const installedSkill = await parseSkillFile(path.join(installDir, 'SKILL.md'))
+  return {
+    skill: installedSkill,
+    installDir,
   }
 }
 

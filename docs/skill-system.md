@@ -5,7 +5,7 @@
 Kraken Agent uses a two-layer skill architecture:
 
 - `skill` tool: activate an installed skill and read its `references/` files
-- `skill_install` tool: install a new skill into the local skill registry
+- `skill_install` tool: initialize, validate, link, inspect, or install a skill into the local skill registry
 
 This keeps skill usage structured and auditable. The agent does not rely on magic text like `LOAD_SKILL:xxx`.
 
@@ -125,6 +125,9 @@ Supported actions:
 
 - `install`
 - `inspect_installed`
+- `init_local`
+- `validate_local`
+- `link`
 
 Implementation:
 
@@ -135,6 +138,9 @@ Current install scope:
 
 - ClawHub slug or page URL install
 - GitHub repo path install
+- local skill scaffold creation
+- local skill validation
+- local skill linking for development
 - download archive
 - extract
 - validate `SKILL.md`
@@ -153,6 +159,9 @@ Install input modes:
 
 - ClawHub: `source="clawhub"` with `slug="owner/skill"` or a ClawHub skill page URL
 - GitHub: `source="github"` with `repo="owner/name"` and `path="path/to/skill"`
+- Local scaffold: `action="init_local"` with `name="skill-name"` and `base_dir="/abs/path/to/skills"`
+- Local validation: `action="validate_local"` with `path="/abs/path/to/skill"`
+- Local link: `action="link"` with `path="/abs/path/to/skill"`
 
 ## 6. Installation Flow
 
@@ -165,6 +174,13 @@ When the agent needs a new skill:
 5. the agent can then call `skill` with `action="activate"`
 
 This is why the skill registry must be dynamic instead of a startup-time constant.
+
+For local skill development:
+
+1. call `skill_install` with `action="init_local"`
+2. edit the generated files
+3. call `skill_install` with `action="validate_local"`
+4. call `skill_install` with `action="link"`
 
 ## 7. Session Persistence
 
@@ -198,6 +214,7 @@ Sidebar implementation:
 The current design intentionally limits what skill installation can do:
 
 - install only into the configured skill directory
+- local link only points at a validated skill directory
 - do not execute `scripts/` during install
 - validate that `SKILL.md` exists
 - allow `read_reference` only under `references/`
