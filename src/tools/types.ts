@@ -2,6 +2,8 @@
  * 工具接口定义
  */
 
+import type { Skill, SkillRuntimeState } from '../skills/types.js'
+
 export interface SessionSandboxConfig {
   workspaceRoot?: string
   readRoots?: string[]
@@ -31,6 +33,8 @@ export interface ToolContext {
   sessionId: string
   sessionSandbox?: SessionSandboxConfig | undefined
   sandboxPolicy: SessionSandboxPolicy
+  availableSkills: Skill[]
+  skillState: SkillRuntimeState
 }
 
 export interface ToolResult {

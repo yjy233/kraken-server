@@ -16,8 +16,10 @@ import { webFetchTool } from './web-fetch.js'
 import { todoTool } from './todo.js'
 import { searchTool } from './search.js'
 import { replaceTool } from './replace.js'
+import { skillTool } from './skill.js'
 import { buildSessionSandboxPolicy } from './sandbox.js'
 import type { SessionSandboxConfig } from './types.js'
+import type { Skill, SkillRuntimeState } from '../skills/types.js'
 
 export interface CreateRegistryOptions {
   rootDir: string
@@ -33,6 +35,8 @@ export interface CreateRegistryOptions {
 export function createToolRegistry(options: CreateRegistryOptions, request?: {
   sessionId?: string
   sessionSandbox?: SessionSandboxConfig | undefined
+  availableSkills?: Skill[] | undefined
+  skillState?: SkillRuntimeState | undefined
 }): ToolDefinition[] {
   const enabledSet = options.enabledTools && options.enabledTools.length > 0
     ? new Set(options.enabledTools)
@@ -50,6 +54,7 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     todoTool,
     searchTool,
     replaceTool,
+    skillTool,
   ]
 
   const tools = allTools.filter((tool) => {
@@ -75,6 +80,8 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     sessionId,
     sessionSandbox: request?.sessionSandbox,
     sandboxPolicy,
+    availableSkills: request?.availableSkills || [],
+    skillState: request?.skillState || { loadedSkillNames: new Set<string>() },
   }
 
   // 注入上下文：包装 execute 方法，并映射为 ToolDefinition 格式

@@ -1,3 +1,4 @@
+import type { Skill } from '../skills/types.js'
 import type { ToolDefinition } from './types.js'
 
 /**
@@ -11,7 +12,8 @@ import type { ToolDefinition } from './types.js'
 export class PromptBuilder {
   constructor(
     private basePrompt: string,
-    private tools: ToolDefinition[]
+    private tools: ToolDefinition[],
+    private skills: Skill[] = []
   ) {}
 
   /** 构建完整的 System Prompt */
@@ -23,6 +25,11 @@ export class PromptBuilder {
       '',
       this.buildAvailableTools(),
     ]
+
+    const skillsMetaSection = this.buildAvailableSkills()
+    if (skillsMetaSection) {
+      sections.push('', skillsMetaSection)
+    }
 
     const todoSection = this.buildTodoGuidelines()
     if (todoSection) {
@@ -99,6 +106,19 @@ export class PromptBuilder {
       '- Use `replace` for precise text substitutions in existing files.',
       '- For large rewrites, use `write_file` instead.',
     ].join('\n')
+  }
+
+  /** 可用 Skill 元数据列表（常驻上下文） */
+  private buildAvailableSkills(): string | null {
+    if (this.skills.length === 0) return null
+    const lines = ['## Available Skills']
+    for (const skill of this.skills) {
+      lines.push(`- **${skill.name}**: ${skill.description}`)
+    }
+    lines.push('')
+    lines.push('When a skill is needed, call the `skill` tool with `action="activate"`.')
+    lines.push('When you need a file from a loaded skill, call the `skill` tool with `action="read_reference"`.')
+    return lines.join('\n')
   }
 
   private hasTool(name: string): boolean {

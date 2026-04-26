@@ -11,7 +11,13 @@ export interface Config {
   defaultWorkspaceRoot: string
   sandboxEnabled: boolean
   seatbeltEnabled: boolean
+  skills: SkillInfo[]
   tools: ToolInfo[]
+}
+
+export interface SkillInfo {
+  name: string
+  description: string
 }
 
 export interface ToolInfo {
@@ -26,6 +32,7 @@ export interface Session {
   model: string
   systemPrompt: string
   sandbox?: SessionSandboxConfig | undefined
+  loadedSkills?: string[] | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessage[]
@@ -36,6 +43,7 @@ export interface SessionSummary {
   title: string
   model: string
   sandbox?: SessionSandboxConfig | undefined
+  loadedSkills?: string[] | undefined
   createdAt: string
   updatedAt: string
   messageCount: number

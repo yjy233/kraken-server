@@ -99,6 +99,7 @@ export default function App() {
       <Sidebar
         sessions={sessions.sessions}
         activeSession={sessions.activeSession}
+        skills={config?.skills || []}
         onOpenSession={handleOpenSession}
         onDeleteSession={handleDeleteSession}
         onClearAll={handleClearAll}

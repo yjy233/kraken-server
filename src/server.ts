@@ -24,6 +24,8 @@ import { PromptBuilder } from './agent/prompt-builder.js'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
 import { buildSandboxPromptContext, buildSessionSandboxPolicy, ensureSandboxLayout, expandHomePath, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
 import type { SessionSandboxConfig } from './tools/types.js'
+import { discoverSkills } from './skills/registry.js'
+import type { SkillRuntimeState } from './skills/types.js'
 import {
   parseInteger,
   parseBoolean,
@@ -101,13 +103,22 @@ interface Session {
   model: string
   systemPrompt: string
   sandbox?: SessionSandboxConfig | undefined
+  loadedSkills?: string[] | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessage[]
 }
 
+// ─── Skill 系统 ──────────────────────────────────────
+
+const AVAILABLE_SKILLS = discoverSkills()
+
 /** 构建动态 System Prompt */
-const promptBuilder = new PromptBuilder(BASE_SYSTEM_PROMPT, createToolRegistry(TOOL_REGISTRY_OPTIONS))
+const promptBuilder = new PromptBuilder(
+  BASE_SYSTEM_PROMPT,
+  createToolRegistry(TOOL_REGISTRY_OPTIONS),
+  AVAILABLE_SKILLS
+)
 const SYSTEM_PROMPT = promptBuilder.build()
 
 /** 创建 ReAct Agent 实例，负责多轮推理循环 */
@@ -118,6 +129,7 @@ const agent = new ReActAgent({
   maxTokens: MAX_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
   toolRegistry: [],
+  availableSkills: AVAILABLE_SKILLS,
 })
 
 // ─── Express 应用 ────────────────────────────────────
@@ -156,6 +168,10 @@ app.get('/api/config', (_req, res) => {
     defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
     sandboxEnabled: ENABLE_PATH_SANDBOX,
     seatbeltEnabled: ENABLE_SEATBELT,
+    skills: AVAILABLE_SKILLS.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+    })),
     tools: createToolRegistry(TOOL_REGISTRY_OPTIONS).map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -230,6 +246,11 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
     }
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'sandbox')) {
       session.sandbox = normalizeSessionSandboxConfig(req.body?.sandbox)
+    }
+    if (Array.isArray(req.body?.loadedSkills)) {
+      session.loadedSkills = req.body.loadedSkills
+        .map((item: unknown) => typeof item === 'string' ? item.trim() : '')
+        .filter(Boolean)
     }
     session.updatedAt = new Date().toISOString()
     await saveSession(session)
@@ -371,9 +392,15 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
 
   await ensureSandboxLayout(sandboxPolicy)
 
+  const skillState: SkillRuntimeState = {
+    loadedSkillNames: new Set(session.loadedSkills || []),
+  }
+
   const toolRegistry = createToolRegistry(TOOL_REGISTRY_OPTIONS, {
     sessionId: session.id,
     sessionSandbox: session.sandbox,
+    availableSkills: AVAILABLE_SKILLS,
+    skillState,
   })
 
   // 追加用户消息
@@ -406,8 +433,11 @@ async function runAgentRequest(body: unknown, emit: ((event: string, data: unkno
       buildSandboxPromptContext(sandboxPolicy),
     ].join('\n'),
     tools: toolRegistry,
+    skillState,
     emit: emit ?? undefined,
   })
+
+  session.loadedSkills = result.loadedSkills || []
 
   // 将最终回复追加到会话
   const finalText = result.reply
@@ -456,6 +486,7 @@ function createSession({ title, systemPrompt, model, sandbox }: { title: string;
     model: model || DEFAULT_MODEL,
     systemPrompt: systemPrompt.trim() || SYSTEM_PROMPT,
     sandbox,
+    loadedSkills: [],
     createdAt: timestamp,
     updatedAt: timestamp,
     messages: [],
@@ -470,6 +501,7 @@ function summarizeSession(session: Session) {
     title: session.title,
     model: session.model,
     sandbox: session.sandbox,
+    loadedSkills: session.loadedSkills || [],
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: session.messages.length,
@@ -507,7 +539,11 @@ async function loadSession(sessionId: string): Promise<Session | null> {
     return null
   }
   const raw = await fs.readFile(filePath, 'utf8')
-  return JSON.parse(raw) as Session
+  const session = JSON.parse(raw) as Session
+  session.loadedSkills = Array.isArray(session.loadedSkills)
+    ? session.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
+    : []
+  return session
 }
 
 /** 保存会话到磁盘 */

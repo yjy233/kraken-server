@@ -1,9 +1,10 @@
 import React from 'react'
-import type { Session, SessionSummary } from '../types.js'
+import type { Session, SessionSummary, SkillInfo } from '../types.js'
 
 interface SidebarProps {
   sessions: SessionSummary[]
   activeSession: Session | null
+  skills: SkillInfo[]
   onOpenSession: (id: string) => void
   onDeleteSession: (id: string) => void
   onClearAll: () => void
@@ -13,11 +14,14 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   sessions,
   activeSession,
+  skills,
   onOpenSession,
   onDeleteSession,
   onClearAll,
   onRefresh,
 }) => {
+  const activeSkills = activeSession?.loadedSkills || []
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -75,6 +79,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ))
         )}
       </div>
+
+      {activeSkills.length > 0 && (
+        <div className="skills-section">
+          <h3>Active Skills</h3>
+          <div className="skill-list">
+            {activeSkills.map((skillName) => (
+              <div key={skillName} className="skill-badge loaded">
+                <span className="skill-name">{skillName}</span>
+                <span className="skill-dot" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {skills.length > 0 && (
+        <div className="skills-section">
+          <h3>Available Skills</h3>
+          <div className="skill-list">
+            {skills.map((skill) => (
+              <div key={skill.name} className="skill-badge">
+                <span className="skill-name">{skill.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </aside>
   )
 }

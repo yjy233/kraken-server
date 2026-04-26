@@ -55,6 +55,10 @@ export function useSessions() {
     setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, sandbox } : prev))
   }, [])
 
+  const setLoadedSkills = useCallback((sessionId: string, loadedSkills: string[]) => {
+    setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, loadedSkills } : prev))
+  }, [])
+
   return {
     sessions,
     activeSession,
@@ -69,5 +73,6 @@ export function useSessions() {
     setActiveSession,
     setSystemPrompt,
     setSandbox,
+    setLoadedSkills,
   }
 }

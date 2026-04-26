@@ -9,29 +9,25 @@
 import crypto from 'node:crypto'
 import { loopQuery } from './loop-query.js'
 import type { AgentMessage, ReActAgentConfig, RunResult, RunStep, EmitFn, RunAgentRequestResult, ToolDefinition } from './types.js'
+import type { SkillRuntimeState } from '../skills/types.js'
 
 export class ReActAgent {
   constructor(private config: ReActAgentConfig) {}
 
-  /**
-   * 启动一次完整的 ReAct 运行。
-   * @param params.messages      初始上下文消息（通常已包含最新 user message）
-   * @param params.model         本次运行指定的模型（可选，默认使用构造配置）
-   * @param params.systemPrompt  本次运行指定的系统提示词（可选）
-   * @param params.emit          SSE 事件发射器（可选）
-   * @returns reply: 最终文本回复；run: 运行记录；finalMessages: 包含完整对话的新消息数组
-   */
   async run(params: {
     messages: AgentMessage[]
     model?: string
     systemPrompt?: string
     tools?: ToolDefinition[] | undefined
+    skillState?: SkillRuntimeState | undefined
     emit?: EmitFn | undefined
   }): Promise<RunAgentRequestResult & { finalMessages: AgentMessage[] }> {
     const model = params.model || this.config.defaultModel
-    const systemPrompt = params.systemPrompt || this.config.defaultSystemPrompt
+    const baseSystemPrompt = params.systemPrompt || this.config.defaultSystemPrompt
     const emit = params.emit
     const tools = params.tools || this.config.toolRegistry
+    const currentSystemPrompt = baseSystemPrompt
+    const loadedSkills = Array.from(params.skillState?.loadedSkillNames || [])
 
     // 初始化运行记录
     const run: RunResult = {
@@ -57,7 +53,7 @@ export class ReActAgent {
       const loopParams: Parameters<typeof loopQuery>[0] = {
         messages: currentMessages,
         model,
-        systemPrompt,
+        systemPrompt: currentSystemPrompt,
         tools,
         maxOutputTokens: this.config.maxTokens,
         step: stepIndex + 1,
@@ -85,13 +81,13 @@ export class ReActAgent {
       if (result.done) {
         const finalText = result.assistantText || 'The model returned without text.'
         run.finalText = finalText
-        return { reply: finalText, run, finalMessages: currentMessages }
+        return { reply: finalText, run, finalMessages: currentMessages, loadedSkills }
       }
     }
 
     // 达到最大步数限制，返回兜底消息
     const exhaustedMessage = `Agent stopped after reaching the maximum step limit (${this.config.maxSteps}).`
     run.finalText = exhaustedMessage
-    return { reply: exhaustedMessage, run, finalMessages: currentMessages }
+    return { reply: exhaustedMessage, run, finalMessages: currentMessages, loadedSkills }
   }
 }

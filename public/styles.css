@@ -797,3 +797,57 @@ body {
     width: 100%;
   }
 }
+
+/* ─── Skills Section ───────────────────────────────── */
+
+.skills-section {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.skills-section h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skill-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: all 120ms ease;
+}
+
+.skill-badge.loaded {
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--brand);
+  font-weight: 500;
+}
+
+.skill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  flex-shrink: 0;
+}

@@ -119,7 +119,10 @@ export interface InvokeModelParams {
 export interface RunAgentRequestResult {
   reply: string
   run: RunResult
+  loadedSkills?: string[]
 }
+
+import type { Skill } from '../skills/types.js'
 
 /** ReActAgent 类构造配置 */
 export interface ReActAgentConfig {
@@ -129,6 +132,7 @@ export interface ReActAgentConfig {
   maxTokens: number
   timeout?: number
   toolRegistry: ToolDefinition[]
+  availableSkills?: Skill[]
 }
 
 /** loopQuery 单轮执行结果 */
