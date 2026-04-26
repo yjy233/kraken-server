@@ -2,14 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Sidebar } from './components/Sidebar.js'
 import { MessageList } from './components/MessageList.js'
 import { Composer } from './components/Composer.js'
+import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
 import { useChat } from './hooks/useChat.js'
+import { useScheduledJobs } from './hooks/useScheduledJobs.js'
 import type { SessionSandboxConfig } from './types.js'
 
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
+  const [activeTab, setActiveTab] = useState<'chat' | 'scheduled'>('chat')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
@@ -49,8 +52,11 @@ export default function App() {
   )
 
   const chat = useChat(sessions.activeSession, handleSessionUpdate, sessions.refresh)
+  const scheduled = useScheduledJobs(activeTab === 'scheduled')
 
-  const displayError = chat.error || configError
+  const displayError = activeTab === 'chat'
+    ? (chat.error || configError)
+    : configError
 
   const handleNewChat = useCallback(async () => {
     chat.clearError()
@@ -94,6 +100,16 @@ export default function App() {
     await sessions.patch(sessions.activeSession.id, body)
   }, [sessions, effectiveWorkspaceRoot, readRootsInput])
 
+  const handleOpenScheduledSession = useCallback(
+    async (sessionId: string) => {
+      chat.clearError()
+      await sessions.open(sessionId)
+      await sessions.refresh()
+      setActiveTab('chat')
+    },
+    [chat, sessions]
+  )
+
   return (
     <div className="page-shell">
       <Sidebar
@@ -109,55 +125,101 @@ export default function App() {
       <main className="chat-panel">
         <header className="chat-header">
           <div className="header-primary">
-            <h2>{sessions.activeSession?.title || 'New chat'}</h2>
-            <div className="sandbox-meta">
-              <div className="sandbox-field">
-                <label className="sandbox-label" htmlFor="workspace-root">
-                  Workspace
-                </label>
-                <input
-                  id="workspace-root"
-                  className="sandbox-input"
-                  type="text"
-                  placeholder={config?.defaultWorkspaceRoot || '~/kraken'}
-                  value={workspaceRoot}
-                  onChange={(e) => setWorkspaceRoot(e.target.value)}
-                />
-              </div>
-              <div className="sandbox-field sandbox-field-grow">
-                <label className="sandbox-label" htmlFor="read-roots">
-                  Read Roots
-                </label>
-                <input
-                  id="read-roots"
-                  className="sandbox-input"
-                  type="text"
-                  placeholder="Optional. Comma-separated readable roots"
-                  value={readRootsInput}
-                  onChange={(e) => setReadRootsInput(e.target.value)}
-                />
-              </div>
+            <div className="panel-tabs" role="tablist" aria-label="Primary views">
               <button
-                className="ghost-button sandbox-save-button"
+                className="panel-tab"
                 type="button"
-                onClick={handleSaveSandbox}
-                disabled={!sessions.activeSession}
+                data-active={activeTab === 'chat'}
+                onClick={() => setActiveTab('chat')}
               >
-                Save sandbox
+                Chat
+              </button>
+              <button
+                className="panel-tab"
+                type="button"
+                data-active={activeTab === 'scheduled'}
+                onClick={() => setActiveTab('scheduled')}
+              >
+                Scheduled
               </button>
             </div>
+
+            {activeTab === 'chat' ? (
+              <>
+                <h2>{sessions.activeSession?.title || 'New chat'}</h2>
+                <div className="sandbox-meta">
+                  <div className="sandbox-field">
+                    <label className="sandbox-label" htmlFor="workspace-root">
+                      Workspace
+                    </label>
+                    <input
+                      id="workspace-root"
+                      className="sandbox-input"
+                      type="text"
+                      placeholder={config?.defaultWorkspaceRoot || '~/kraken'}
+                      value={workspaceRoot}
+                      onChange={(e) => setWorkspaceRoot(e.target.value)}
+                    />
+                  </div>
+                  <div className="sandbox-field sandbox-field-grow">
+                    <label className="sandbox-label" htmlFor="read-roots">
+                      Read Roots
+                    </label>
+                    <input
+                      id="read-roots"
+                      className="sandbox-input"
+                      type="text"
+                      placeholder="Optional. Comma-separated readable roots"
+                      value={readRootsInput}
+                      onChange={(e) => setReadRootsInput(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    className="ghost-button sandbox-save-button"
+                    type="button"
+                    onClick={handleSaveSandbox}
+                    disabled={!sessions.activeSession}
+                  >
+                    Save sandbox
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="scheduled-header-copy">
+                <h2>Scheduled Jobs</h2>
+                <p>
+                  Create one-off and interval jobs. Each execution starts a new session and can reuse a session template.
+                </p>
+              </div>
+            )}
           </div>
-          <div className="header-meta">
-            <span className="session-count">
-              {sessions.activeSession
-                ? `${sessions.activeSession.messages.length} messages`
-                : 'No session'}
-            </span>
-            <span className="model-pill">{config?.model || 'Model'}</span>
-            <button className="ghost-button" type="button" onClick={handleNewChat}>
-              New chat
-            </button>
-          </div>
+          {activeTab === 'chat' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {sessions.activeSession
+                  ? `${sessions.activeSession.messages.length} messages`
+                  : 'No session'}
+              </span>
+              <span className="model-pill">{config?.model || 'Model'}</span>
+              <button className="ghost-button" type="button" onClick={handleNewChat}>
+                New chat
+              </button>
+            </div>
+          ) : (
+            <div className="header-meta">
+              <span className="session-count">
+                {scheduled.status
+                  ? `${scheduled.status.jobCount} jobs`
+                  : `${scheduled.jobs.length} jobs`}
+              </span>
+              <span className="model-pill">
+                {config?.schedulerEnabled ? 'Scheduler on' : 'Scheduler off'}
+              </span>
+              <button className="ghost-button" type="button" onClick={() => void scheduled.refresh()}>
+                Refresh jobs
+              </button>
+            </div>
+          )}
         </header>
 
         {displayError && (
@@ -166,14 +228,37 @@ export default function App() {
           </div>
         )}
 
-        <MessageList
-          session={sessions.activeSession}
-          runtimeEvents={chat.runtimeEvents}
-          streamingText={chat.streamingText}
-          sending={chat.sending}
-        />
+        {activeTab === 'chat' ? (
+          <>
+            <MessageList
+              session={sessions.activeSession}
+              runtimeEvents={chat.runtimeEvents}
+              streamingText={chat.streamingText}
+              sending={chat.sending}
+            />
 
-        <Composer sending={chat.sending} onSend={handleSend} onCancel={chat.cancel} />
+            <Composer sending={chat.sending} onSend={handleSend} onCancel={chat.cancel} />
+          </>
+        ) : (
+          <ScheduledJobsPanel
+            jobs={scheduled.jobs}
+            status={scheduled.status}
+            sessions={sessions.sessions}
+            activeSessionId={sessions.activeSession?.id || null}
+            schedulerEnabled={Boolean(config?.schedulerEnabled)}
+            schedulerPollIntervalMs={config?.schedulerPollIntervalMs || 300000}
+            loading={scheduled.loading}
+            error={scheduled.error}
+            executionsByJob={scheduled.executionsByJob}
+            onRefresh={scheduled.refresh}
+            onCreateJob={scheduled.createJob}
+            onUpdateJob={scheduled.updateJob}
+            onDeleteJob={scheduled.removeJob}
+            onRunJobNow={scheduled.runJobNow}
+            onLoadExecutions={scheduled.loadExecutions}
+            onOpenSession={handleOpenScheduledSession}
+          />
+        )}
       </main>
     </div>
   )

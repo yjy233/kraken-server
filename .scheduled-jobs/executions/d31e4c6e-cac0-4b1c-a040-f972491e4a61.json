@@ -1,0 +1,17 @@
+{
+  "jobId": "b3a16b08-c6dc-4575-9216-921277b4c4f3",
+  "sessionId": "52d59272-b864-405a-aa1d-d50d05c54a04",
+  "status": "succeeded",
+  "triggerType": "schedule",
+  "attempt": 1,
+  "id": "d31e4c6e-cac0-4b1c-a040-f972491e4a61",
+  "createdAt": "2026-04-26T14:53:27.707Z",
+  "updatedAt": "2026-04-26T14:53:34.901Z",
+  "startedAt": "2026-04-26T14:53:27.707Z",
+  "finishedAt": "2026-04-26T14:53:34.900Z",
+  "result": {
+    "reply": "💧 好的，已经帮你记下了！记得多喝水，保持身体水分充足哦～\n\n一般建议每天喝 **1500-2000ml** 的水，大约 **7-8 杯**。定时喝水对身体很有好处！🥤",
+    "runId": "5bdf2013-85f2-4894-92f5-5bd872635cd4",
+    "toolExecutionCount": 1
+  }
+}

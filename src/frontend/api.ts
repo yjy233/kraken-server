@@ -2,7 +2,16 @@
  * API 调用封装
  */
 
-import type { Config, Session, SessionSummary, SessionSandboxConfig, StreamCompleteData } from './types.js'
+import type {
+  Config,
+  Session,
+  SessionSummary,
+  SessionSandboxConfig,
+  StreamCompleteData,
+  ScheduledExecution,
+  ScheduledJob,
+  SchedulerStatus,
+} from './types.js'
 
 const BASE = ''
 
@@ -53,6 +62,41 @@ export async function deleteSession(sessionId: string): Promise<void> {
 
 export async function deleteAllSessions(): Promise<void> {
   await request('/api/sessions', { method: 'DELETE' })
+}
+
+export async function fetchScheduledJobs(): Promise<ScheduledJob[]> {
+  const data = await request<{ jobs: ScheduledJob[] }>('/api/scheduled-jobs')
+  return data.jobs
+}
+
+export async function fetchScheduledJob(jobId: string): Promise<ScheduledJob> {
+  const data = await request<{ job: ScheduledJob }>(`/api/scheduled-jobs/${jobId}`)
+  return data.job
+}
+
+export async function createScheduledJob(body: Record<string, unknown>): Promise<{ job: ScheduledJob }> {
+  return request('/api/scheduled-jobs', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function updateScheduledJob(jobId: string, body: Record<string, unknown>): Promise<{ job: ScheduledJob }> {
+  return request(`/api/scheduled-jobs/${jobId}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export async function deleteScheduledJob(jobId: string): Promise<void> {
+  await request(`/api/scheduled-jobs/${jobId}`, { method: 'DELETE' })
+}
+
+export async function runScheduledJob(jobId: string): Promise<{ execution: ScheduledExecution }> {
+  return request(`/api/scheduled-jobs/${jobId}/run`, { method: 'POST' })
+}
+
+export async function fetchJobExecutions(jobId: string): Promise<ScheduledExecution[]> {
+  const data = await request<{ executions: ScheduledExecution[] }>(`/api/scheduled-jobs/${jobId}/executions`)
+  return data.executions
+}
+
+export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
+  return request('/api/scheduler/status')
 }
 
 export interface ChatPayload {

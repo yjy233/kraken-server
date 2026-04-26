@@ -1,51 +1,31 @@
-/**
- * Express 服务器入口
- *
- * 职责：
- * - 加载环境变量、创建 Express 应用
- * - 挂载 REST API 路由（health、config、tools、sessions、chat）
- * - 管理会话持久化（JSON 文件读写）
- * - 接收用户消息后，委托 ReActAgent 执行多轮推理，
- *   通过 SSE 将运行事件实时推送到前端
- */
+import './bootstrap.js'
 
-import './bootstrap.js' // 最先加载，保证 .env 在其他模块读取 process.env 之前生效
-
-import crypto from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
-import type { AgentMessage, ToolDefinition } from './agent/types.js'
-import { ReActAgent } from './agent/react-agent.js'
-import { PromptBuilder, extractBaseSystemPrompt } from './agent/prompt-builder.js'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
-import { buildSandboxPromptContext, buildSessionSandboxPolicy, ensureSandboxLayout, normalizeSessionSandboxConfig, parseSensitivePaths } from './tools/sandbox.js'
-import type { SessionSandboxConfig, SessionSandboxPolicy } from './tools/types.js'
+import { parseSensitivePaths } from './tools/sandbox.js'
+import type { SessionSandboxConfig } from './tools/types.js'
 import { getAvailableSkills } from './skills/manager.js'
-import type { SkillRuntimeState } from './skills/types.js'
 import {
   parseInteger,
   parseBoolean,
-  sanitizeTitle,
-  isSafeSessionId,
-  isRecord,
-  collapseWhitespace,
-  truncate,
   expandHomePath,
 } from './utils/helpers.js'
-
-// ─── 路径与环境 ───────────────────────────────────────
+import { createSessionStore } from './runtime/session-store.js'
+import { createAgentService } from './runtime/agent-service.js'
+import { createSchedulerStore } from './scheduler/store.js'
+import { computeNextRunAt } from './scheduler/planner.js'
+import { createSchedulerService } from './scheduler/service.js'
+import type { ScheduledJob, ScheduledJobSchedule } from './scheduler/types.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, '..')
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public')
 const SESSION_DIR = path.join(ROOT_DIR, '.sessions')
-
-mkdirSync(SESSION_DIR, { recursive: true })
+const SCHEDULED_JOBS_DIR = path.join(ROOT_DIR, '.scheduled-jobs')
 
 const HOST = process.env.HOST || '127.0.0.1'
 const PORT = parseInteger(process.env.PORT, 3011)
@@ -71,8 +51,10 @@ const ENABLE_SEATBELT = parseBoolean(process.env.ENABLE_SEATBELT, true)
 const DEFAULT_WORKSPACE_ROOT = path.resolve(expandHomePath(process.env.DEFAULT_WORKSPACE_ROOT || path.join(os.homedir(), 'kraken')))
 const SENSITIVE_PATHS = parseSensitivePaths(process.env.SENSITIVE_PATHS)
 const CONFIGURED = Boolean(process.env.OPENROUTER_API_KEY)
+const SCHEDULER_ENABLED = parseBoolean(process.env.SCHEDULER_ENABLED, true)
+const SCHEDULER_POLL_INTERVAL_MS = parseInteger(process.env.SCHEDULER_POLL_INTERVAL_MS, 300000)
+const SCHEDULER_MAX_CONCURRENCY = parseInteger(process.env.SCHEDULER_MAX_CONCURRENCY, 1)
 
-// 解析 ENABLED_TOOLS，格式：逗号分隔的工具名，如 "list_directory,read_file,todo"
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
   .split(',')
   .map((s) => s.trim())
@@ -89,76 +71,43 @@ const TOOL_REGISTRY_OPTIONS: CreateRegistryOptions = {
   enabledTools: ENABLED_TOOLS.length > 0 ? ENABLED_TOOLS : undefined,
 }
 
-// ─── 类型 ────────────────────────────────────────────
-
-interface SessionMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  createdAt: string
-}
-
-interface Session {
-  id: string
-  title: string
-  model: string
-  systemPrompt: string
-  sandbox?: SessionSandboxConfig | undefined
-  loadedSkills?: string[] | undefined
-  createdAt: string
-  updatedAt: string
-  messages: SessionMessage[]
-}
-
-// ─── Skill 系统 ──────────────────────────────────────
-
-/** 构建动态 System Prompt */
-function buildSystemPrompt(basePrompt: string, tools: ToolDefinition[]): string {
-  return new PromptBuilder(
-    normalizeSystemPrompt(basePrompt),
-    tools,
-    getAvailableSkills()
-  ).build()
-}
-
-function buildDefaultSystemPrompt(): string {
-  return buildSystemPrompt(BASE_SYSTEM_PROMPT, createToolRegistry(TOOL_REGISTRY_OPTIONS))
-}
-
-function normalizeSystemPrompt(systemPrompt: string | undefined): string {
-  const normalized = extractBaseSystemPrompt(systemPrompt || '').trim()
-  return normalized || BASE_SYSTEM_PROMPT
-}
-
-function buildRuntimeSystemPrompt(basePrompt: string, tools: ToolDefinition[], sandboxPolicy: SessionSandboxPolicy): string {
-  return [
-    buildSystemPrompt(basePrompt, tools),
-    '',
-    buildSandboxPromptContext(sandboxPolicy),
-  ].join('\n')
-}
-
-/** 创建 ReAct Agent 实例，负责多轮推理循环 */
-const agent = new ReActAgent({
+const sessionStore = createSessionStore({
+  sessionDir: SESSION_DIR,
   defaultModel: DEFAULT_MODEL,
-  defaultSystemPrompt: BASE_SYSTEM_PROMPT,
+  normalizeSystemPrompt,
+})
+
+const agentService = createAgentService({
+  defaultModel: DEFAULT_MODEL,
+  baseSystemPrompt: BASE_SYSTEM_PROMPT,
   maxSteps: MAX_AGENT_STEPS,
   maxTokens: MAX_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
-  toolRegistry: [],
+  maxContextMessages: MAX_CONTEXT_MESSAGES,
+  defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+  sensitivePaths: SENSITIVE_PATHS,
+  enablePathSandbox: ENABLE_PATH_SANDBOX,
+  toolRegistryOptions: TOOL_REGISTRY_OPTIONS,
+  sessionStore,
 })
 
-// ─── Express 应用 ────────────────────────────────────
+const schedulerStore = createSchedulerStore(SCHEDULED_JOBS_DIR)
+const schedulerService = createSchedulerService({
+  enabled: SCHEDULER_ENABLED,
+  pollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
+  maxConcurrency: SCHEDULER_MAX_CONCURRENCY,
+  store: schedulerStore,
+  sessionStore,
+  agentRunner: agentService,
+})
 
 const app = express()
-
 app.disable('x-powered-by')
 app.use(express.json({ limit: '1mb' }))
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }))
 
-// ─── 路由：健康检查 ──────────────────────────────────
-
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const schedulerStatus = await schedulerService.getStatus()
   res.json({
     ok: true,
     configured: CONFIGURED,
@@ -167,11 +116,10 @@ app.get('/api/health', (_req, res) => {
     model: DEFAULT_MODEL,
     maxAgentSteps: MAX_AGENT_STEPS,
     toolCount: createToolRegistry(TOOL_REGISTRY_OPTIONS).length,
+    scheduler: schedulerStatus,
     now: new Date().toISOString(),
   })
 })
-
-// ─── 路由：配置与工具列表 ─────────────────────────────
 
 app.get('/api/config', (_req, res) => {
   res.json({
@@ -184,6 +132,9 @@ app.get('/api/config', (_req, res) => {
     defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
     sandboxEnabled: ENABLE_PATH_SANDBOX,
     seatbeltEnabled: ENABLE_SEATBELT,
+    schedulerEnabled: SCHEDULER_ENABLED,
+    schedulerMaxConcurrency: SCHEDULER_MAX_CONCURRENCY,
+    schedulerPollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
     skills: getAvailableSkills().map((skill) => ({
       name: skill.name,
       description: skill.description,
@@ -207,11 +158,9 @@ app.get('/api/tools', (_req, res) => {
   })
 })
 
-// ─── 路由：会话 CRUD ─────────────────────────────────
-
 app.get('/api/sessions', async (_req, res, next) => {
   try {
-    const sessions = await listSessions()
+    const sessions = await sessionStore.listSessions()
     res.json({ ok: true, sessions })
   } catch (error) {
     next(error)
@@ -220,14 +169,14 @@ app.get('/api/sessions', async (_req, res, next) => {
 
 app.post('/api/sessions', async (req, res, next) => {
   try {
-    const session = createSession({
+    const session = sessionStore.createSession({
       title: typeof req.body?.title === 'string' ? req.body.title : '',
       systemPrompt: typeof req.body?.systemPrompt === 'string' ? req.body.systemPrompt : undefined,
       model: typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL,
-      sandbox: normalizeSessionSandboxConfig(req.body?.sandbox),
+      sandbox: req.body?.sandbox as SessionSandboxConfig | undefined,
     })
-    await saveSession(session)
-    res.status(201).json({ ok: true, session, summary: summarizeSession(session) })
+    await sessionStore.saveSession(session)
+    res.status(201).json({ ok: true, session, summary: sessionStore.summarizeSession(session) })
   } catch (error) {
     next(error)
   }
@@ -235,7 +184,7 @@ app.post('/api/sessions', async (req, res, next) => {
 
 app.get('/api/sessions/:sessionId', async (req, res, next) => {
   try {
-    const session = await loadSession(req.params.sessionId)
+    const session = await sessionStore.loadSession(req.params.sessionId)
     if (!session) {
       return res.status(404).json({ ok: false, error: 'Session not found' })
     }
@@ -247,12 +196,12 @@ app.get('/api/sessions/:sessionId', async (req, res, next) => {
 
 app.patch('/api/sessions/:sessionId', async (req, res, next) => {
   try {
-    const session = await loadSession(req.params.sessionId)
+    const session = await sessionStore.loadSession(req.params.sessionId)
     if (!session) {
       return res.status(404).json({ ok: false, error: 'Session not found' })
     }
     if (typeof req.body?.title === 'string') {
-      session.title = sanitizeTitle(req.body.title) || session.title
+      session.title = req.body.title
     }
     if (typeof req.body?.systemPrompt === 'string') {
       session.systemPrompt = normalizeSystemPrompt(req.body.systemPrompt)
@@ -261,7 +210,7 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
       session.model = req.body.model.trim()
     }
     if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'sandbox')) {
-      session.sandbox = normalizeSessionSandboxConfig(req.body?.sandbox)
+      session.sandbox = req.body?.sandbox as SessionSandboxConfig | undefined
     }
     if (Array.isArray(req.body?.loadedSkills)) {
       session.loadedSkills = req.body.loadedSkills
@@ -269,8 +218,8 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
         .filter(Boolean)
     }
     session.updatedAt = new Date().toISOString()
-    await saveSession(session)
-    res.json({ ok: true, session, summary: summarizeSession(session) })
+    await sessionStore.saveSession(session)
+    res.json({ ok: true, session, summary: sessionStore.summarizeSession(session) })
   } catch (error) {
     next(error)
   }
@@ -278,7 +227,7 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
 
 app.delete('/api/sessions/:sessionId', async (req, res, next) => {
   try {
-    await deleteSession(req.params.sessionId)
+    await sessionStore.deleteSession(req.params.sessionId)
     res.json({ ok: true })
   } catch (error) {
     next(error)
@@ -287,30 +236,25 @@ app.delete('/api/sessions/:sessionId', async (req, res, next) => {
 
 app.delete('/api/sessions', async (_req, res, next) => {
   try {
-    await deleteAllSessions()
+    await sessionStore.deleteAllSessions()
     res.json({ ok: true })
   } catch (error) {
     next(error)
   }
 })
 
-// ─── 路由：聊天（同步 & SSE 流式）──────────────────────
-
-/** 同步聊天接口 */
 app.post('/api/chat', async (req, res, next) => {
   try {
-    const result = await runAgentRequest(req.body, null)
+    if (!CONFIGURED) {
+      throw new Error('No API key is configured. Add OPENROUTER_API_KEY to .env or your shell environment.')
+    }
+    const result = await agentService.runRequest(req.body, null)
     res.json({ ok: true, ...result })
   } catch (error) {
     next(error)
   }
 })
 
-/**
- * SSE 流式聊天接口
- * 前端通过 EventSource 连接，实时接收 run:start、run:step、
- * assistant:delta、tool:requested、tool:running、tool:result 等事件。
- */
 app.get('/api/chat/stream', async (req, res, next) => {
   const rawPayload = req.query.payload
   if (typeof rawPayload !== 'string' || !rawPayload) {
@@ -324,7 +268,10 @@ app.get('/api/chat/stream', async (req, res, next) => {
   }
   initSse(res)
   try {
-    const result = await runAgentRequest(payload, (event, data) => {
+    if (!CONFIGURED) {
+      throw new Error('No API key is configured. Add OPENROUTER_API_KEY to .env or your shell environment.')
+    }
+    const result = await agentService.runRequest(payload, (event, data) => {
       writeSse(res, event, data)
     })
     writeSse(res, 'complete', { ok: true, ...result })
@@ -337,7 +284,97 @@ app.get('/api/chat/stream', async (req, res, next) => {
   }
 })
 
-// ─── 全局错误处理 ────────────────────────────────────
+app.get('/api/scheduler/status', async (_req, res, next) => {
+  try {
+    const status = await schedulerService.getStatus()
+    res.json({ ok: true, ...status })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/scheduled-jobs', async (_req, res, next) => {
+  try {
+    const jobs = await schedulerStore.listJobs()
+    res.json({ ok: true, jobs })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/scheduled-jobs', async (req, res, next) => {
+  try {
+    const job = await schedulerStore.createJob(buildScheduledJobInput(req.body))
+    res.status(201).json({ ok: true, job })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/scheduled-jobs/:jobId', async (req, res, next) => {
+  try {
+    const job = await schedulerStore.getJob(req.params.jobId)
+    if (!job) {
+      return res.status(404).json({ ok: false, error: 'Scheduled job not found' })
+    }
+    res.json({ ok: true, job })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.patch('/api/scheduled-jobs/:jobId', async (req, res, next) => {
+  try {
+    const current = await schedulerStore.getJob(req.params.jobId)
+    if (!current) {
+      return res.status(404).json({ ok: false, error: 'Scheduled job not found' })
+    }
+    const patch = buildScheduledJobPatch(req.body, current)
+    const job = await schedulerStore.updateJob(req.params.jobId, patch)
+    res.json({ ok: true, job })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete('/api/scheduled-jobs/:jobId', async (req, res, next) => {
+  try {
+    await schedulerStore.deleteJob(req.params.jobId)
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/scheduled-jobs/:jobId/run', async (req, res, next) => {
+  try {
+    const execution = await schedulerService.runNow(req.params.jobId)
+    res.json({ ok: true, execution })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/scheduled-jobs/:jobId/executions', async (req, res, next) => {
+  try {
+    const executions = await schedulerStore.listExecutions(req.params.jobId)
+    res.json({ ok: true, executions })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/scheduled-executions/:executionId', async (req, res, next) => {
+  try {
+    const execution = await schedulerStore.getExecution(req.params.executionId)
+    if (!execution) {
+      return res.status(404).json({ ok: false, error: 'Scheduled execution not found' })
+    }
+    res.json({ ok: true, execution })
+  } catch (error) {
+    next(error)
+  }
+})
 
 app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : 'Unknown server error'
@@ -348,252 +385,131 @@ app.use((error: unknown, _req: express.Request, res: express.Response, next: exp
   res.status(status).json({ ok: false, error: message })
 })
 
-// ─── 启动 ────────────────────────────────────────────
-
 app.listen(PORT, HOST, () => {
   console.log(`${APP_TITLE} listening on http://${HOST}:${PORT}`)
 })
 
-// ─── Agent 请求处理 ──────────────────────────────────
+void schedulerService.start()
 
-/**
- * 处理一次用户聊天请求的核心逻辑。
- * 1. 获取或创建 Session
- * 2. 追加用户消息
- * 3. 委托 ReActAgent 执行多轮推理
- * 4. 保存会话并返回结果
- */
-async function runAgentRequest(body: unknown, emit: ((event: string, data: unknown) => void) | null) {
-  const payload = isRecord(body) ? body : {}
-  const rawMessage = typeof payload.message === 'string' ? payload.message.trim() : ''
-  if (!rawMessage) {
+function normalizeSystemPrompt(systemPrompt: string | undefined): string {
+  return agentService.normalizeSystemPrompt(systemPrompt)
+}
+
+function buildScheduledJobInput(body: unknown): Omit<ScheduledJob, 'id' | 'createdAt' | 'updatedAt'> {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Invalid JSON body')
+  }
+  const record = body as Record<string, unknown>
+  const name = String(record.name || '').trim()
+  const message = String(record.message || '').trim()
+  if (!name) {
+    throw new Error('name is required')
+  }
+  if (!message) {
     throw new Error('message is required')
   }
-  if (!CONFIGURED) {
-    throw new Error('No API key is configured. Add OPENROUTER_API_KEY to .env or your shell environment.')
+  const schedule = normalizeSchedule(record.schedule)
+  const job: Omit<ScheduledJob, 'id' | 'createdAt' | 'updatedAt'> = {
+    name,
+    enabled: record.enabled === undefined ? true : Boolean(record.enabled),
+    message,
+    schedule,
+    nextRunAt: computeNextRunAt(schedule),
+    overlapPolicy: record.overlapPolicy === 'parallel' ? 'parallel' : 'skip',
   }
-
-  const requestedModel = typeof payload.model === 'string' && payload.model.trim()
-    ? payload.model.trim()
-    : DEFAULT_MODEL
-  const requestSandbox = normalizeSessionSandboxConfig(payload.sandbox)
-
-  // 获取已有会话，或创建新会话
-  let session: Session | null = typeof payload.sessionId === 'string' && payload.sessionId
-    ? await loadSession(payload.sessionId)
-    : null
-  if (!session) {
-    session = createSession({
-      title: sanitizeTitle(rawMessage),
-      systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
-      model: requestedModel,
-      sandbox: requestSandbox,
-    })
+  if (typeof record.sessionTemplateId === 'string' && record.sessionTemplateId.trim()) {
+    job.sessionTemplateId = record.sessionTemplateId.trim()
   }
-  if (typeof payload.systemPrompt === 'string') {
-    session.systemPrompt = normalizeSystemPrompt(payload.systemPrompt)
+  if (typeof record.model === 'string' && record.model.trim()) {
+    job.model = record.model.trim()
   }
-  if (requestSandbox !== undefined) {
-    session.sandbox = requestSandbox
+  if (typeof record.systemPrompt === 'string') {
+    job.systemPrompt = record.systemPrompt
   }
-  session.model = requestedModel
-
-  const sandboxPolicy = buildSessionSandboxPolicy({
-    sessionId: session.id,
-    sessionSandbox: session.sandbox,
-    defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
-    sensitivePaths: SENSITIVE_PATHS,
-    enablePathSandbox: ENABLE_PATH_SANDBOX,
-  })
-
-  await ensureSandboxLayout(sandboxPolicy)
-
-  const skillState: SkillRuntimeState = {
-    loadedSkillNames: new Set(session.loadedSkills || []),
+  if (Object.prototype.hasOwnProperty.call(record, 'sandbox')) {
+    job.sandbox = record.sandbox as SessionSandboxConfig | undefined
   }
-
-  const availableSkills = getAvailableSkills()
-  const toolRegistry = createToolRegistry(TOOL_REGISTRY_OPTIONS, {
-    sessionId: session.id,
-    sessionSandbox: session.sandbox,
-    availableSkills,
-    skillState,
-  })
-
-  // 追加用户消息
-  const userMessage: SessionMessage = {
-    id: crypto.randomUUID(),
-    role: 'user',
-    content: rawMessage,
-    createdAt: new Date().toISOString(),
+  if (Array.isArray(record.loadedSkills)) {
+    job.loadedSkills = record.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
   }
-  session.messages.push(userMessage)
-  session.updatedAt = new Date().toISOString()
-  if (session.messages.filter((message) => message.role === 'user').length === 1) {
-    session.title = sanitizeTitle(rawMessage) || session.title
-  }
-
-  emit?.('session', {
-    session: summarizeSession(session),
-    state: 'started',
-  })
-
-  // 构建上下文消息（限制长度），交给 Agent 执行
-  const agentMessages = buildAgentMessages(session.messages, MAX_CONTEXT_MESSAGES)
-
-  const result = await agent.run({
-    messages: agentMessages,
-    model: session.model,
-    systemPrompt: buildRuntimeSystemPrompt(session.systemPrompt, toolRegistry, sandboxPolicy),
-    tools: toolRegistry,
-    skillState,
-    emit: emit ?? undefined,
-  })
-
-  session.loadedSkills = result.loadedSkills || []
-
-  // 将最终回复追加到会话
-  const finalText = result.reply
-  const assistantMessage: SessionMessage = {
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content: finalText,
-    createdAt: new Date().toISOString(),
-  }
-  session.messages.push(assistantMessage)
-  session.updatedAt = new Date().toISOString()
-
-  // 回填 sessionId 到运行记录
-  const run = result.run
-  run.sessionId = session.id
-
-  await saveSession(session)
-  emit?.('session', {
-    session: summarizeSession(session),
-    state: 'saved',
-  })
-
-  return {
-    reply: finalText,
-    session,
-    run,
-  }
+  return job
 }
 
-// ─── 会话辅助函数 ────────────────────────────────────
-
-/** 将会话消息转换为 AgentMessage 数组，并按 maxMessages 截断上下文 */
-function buildAgentMessages(sessionMessages: SessionMessage[], maxMessages: number): AgentMessage[] {
-  return sessionMessages.slice(-maxMessages).map((message) => ({
-    role: message.role,
-    content: message.content,
-  }))
-}
-
-/** 创建新会话 */
-function createSession({ title, systemPrompt, model, sandbox }: { title: string; systemPrompt?: string | undefined; model: string; sandbox?: SessionSandboxConfig | undefined }): Session {
-  const timestamp = new Date().toISOString()
-  return {
-    id: crypto.randomUUID(),
-    title: sanitizeTitle(title) || 'New chat',
-    model: model || DEFAULT_MODEL,
-    systemPrompt: normalizeSystemPrompt(systemPrompt),
-    sandbox,
-    loadedSkills: [],
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    messages: [],
+function buildScheduledJobPatch(
+  body: unknown,
+  current: ScheduledJob
+): Partial<Omit<ScheduledJob, 'id' | 'createdAt'>> {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Invalid JSON body')
   }
-}
+  const record = body as Record<string, unknown>
+  const patch: Partial<Omit<ScheduledJob, 'id' | 'createdAt'>> = {}
 
-/** 生成会话摘要（用于列表展示） */
-function summarizeSession(session: Session) {
-  const lastMessage = session.messages.at(-1)
-  return {
-    id: session.id,
-    title: session.title,
-    model: session.model,
-    sandbox: session.sandbox,
-    loadedSkills: session.loadedSkills || [],
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    messageCount: session.messages.length,
-    preview: lastMessage ? truncate(collapseWhitespace(lastMessage.content), 100) : '',
-    lastRole: lastMessage?.role ?? null,
+  if (typeof record.name === 'string' && record.name.trim()) {
+    patch.name = record.name.trim()
   }
-}
-
-/** 列出所有会话（按更新时间倒序） */
-async function listSessions() {
-  const entries = await fs.readdir(SESSION_DIR, { withFileTypes: true })
-  const sessions: Array<ReturnType<typeof summarizeSession>> = []
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.json')) {
-      continue
-    }
-    try {
-      const raw = await fs.readFile(path.join(SESSION_DIR, entry.name), 'utf8')
-      const session = JSON.parse(raw) as Session
-      sessions.push(summarizeSession(session))
-    } catch {
-      continue
+  if (typeof record.message === 'string' && record.message.trim()) {
+    patch.message = record.message.trim()
+  }
+  if (typeof record.sessionTemplateId === 'string') {
+    if (record.sessionTemplateId.trim()) {
+      patch.sessionTemplateId = record.sessionTemplateId.trim()
     }
   }
-  return sessions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-}
-
-/** 加载单个会话 */
-async function loadSession(sessionId: string): Promise<Session | null> {
-  if (!isSafeSessionId(sessionId)) {
-    return null
-  }
-  const filePath = sessionFilePath(sessionId)
-  if (!existsSync(filePath)) {
-    return null
-  }
-  const raw = await fs.readFile(filePath, 'utf8')
-  const session = JSON.parse(raw) as Session
-  session.systemPrompt = normalizeSystemPrompt(session.systemPrompt)
-  session.loadedSkills = Array.isArray(session.loadedSkills)
-    ? session.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
-    : []
-  return session
-}
-
-/** 保存会话到磁盘 */
-async function saveSession(session: Session) {
-  await fs.writeFile(sessionFilePath(session.id), JSON.stringify(session, null, 2), 'utf8')
-}
-
-/** 删除会话 */
-async function deleteSession(sessionId: string) {
-  if (!isSafeSessionId(sessionId)) {
-    return
-  }
-  const filePath = sessionFilePath(sessionId)
-  if (existsSync(filePath)) {
-    await fs.unlink(filePath)
-  }
-}
-
-/** 删除全部会话 */
-async function deleteAllSessions() {
-  const entries = await fs.readdir(SESSION_DIR, { withFileTypes: true })
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith('.json')) {
-      await fs.unlink(path.join(SESSION_DIR, entry.name))
+  if (typeof record.model === 'string') {
+    if (record.model.trim()) {
+      patch.model = record.model.trim()
     }
   }
+  if (typeof record.systemPrompt === 'string') {
+    patch.systemPrompt = record.systemPrompt
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'sandbox')) {
+    patch.sandbox = record.sandbox as SessionSandboxConfig | undefined
+  }
+  if (Array.isArray(record.loadedSkills)) {
+    patch.loadedSkills = record.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
+  }
+  if (typeof record.enabled === 'boolean') {
+    patch.enabled = record.enabled
+  }
+  if (record.overlapPolicy === 'parallel' || record.overlapPolicy === 'skip') {
+    patch.overlapPolicy = record.overlapPolicy
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'schedule')) {
+    const schedule = normalizeSchedule(record.schedule)
+    patch.schedule = schedule
+    patch.nextRunAt = computeNextRunAt(schedule)
+  } else if (patch.enabled === false) {
+    patch.nextRunAt = current.nextRunAt
+  }
+  patch.updatedAt = new Date().toISOString()
+  return patch
 }
 
-/** 生成会话文件路径 */
-function sessionFilePath(sessionId: string) {
-  return path.join(SESSION_DIR, `${sessionId}.json`)
+function normalizeSchedule(value: unknown): ScheduledJobSchedule {
+  if (!value || typeof value !== 'object') {
+    throw new Error('schedule is required')
+  }
+  const record = value as Record<string, unknown>
+  const type = String(record.type || '').trim()
+  if (type === 'once') {
+    const runAt = String(record.runAt || '').trim()
+    if (!runAt) {
+      throw new Error('schedule.runAt is required for once jobs')
+    }
+    return { type: 'once', runAt }
+  }
+  if (type === 'interval') {
+    const everyMs = parseInteger(record.everyMs, 0)
+    if (everyMs <= 0) {
+      throw new Error('schedule.everyMs must be a positive number for interval jobs')
+    }
+    return { type: 'interval', everyMs }
+  }
+  throw new Error(`Unsupported schedule type: ${type}`)
 }
 
-// ─── SSE 辅助函数 ────────────────────────────────────
-
-/** 初始化 SSE 响应头 */
 function initSse(res: express.Response) {
   res.status(200)
   res.setHeader('Cache-Control', 'no-cache, no-transform')
@@ -604,7 +520,6 @@ function initSse(res: express.Response) {
   }
 }
 
-/** 写入一条 SSE 事件 */
 function writeSse(res: express.Response, event: string, payload: unknown) {
   res.write(`event: ${event}\n`)
   res.write(`data: ${JSON.stringify(payload)}\n\n`)
