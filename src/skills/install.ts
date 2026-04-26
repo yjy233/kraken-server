@@ -23,7 +23,7 @@ export interface InstalledSkillResult {
 }
 
 export function getDefaultSkillInstallRoot(): string {
-  return path.join(os.homedir(), '.config', 'kraken', 'skills')
+  return path.join(os.homedir(), 'kraken', 'skills')
 }
 
 export async function installSkillFromGitHub(params: InstallSkillParams): Promise<InstalledSkillResult> {

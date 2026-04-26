@@ -4,7 +4,7 @@ import { discoverSkills } from './registry.js'
 import type { Skill } from './types.js'
 
 let availableSkills: Skill[] = discoverSkills()
-const defaultInstallRoot = path.join(os.homedir(), '.config', 'kraken', 'skills')
+const defaultInstallRoot = path.join(os.homedir(), 'kraken', 'skills')
 
 export function getAvailableSkills(): Skill[] {
   return availableSkills

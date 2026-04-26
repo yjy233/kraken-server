@@ -44,7 +44,7 @@ Skills are discovered in this order, with higher-priority directories overriding
 
 1. `KRAKEN_SKILLS_DIR`
 2. `./skills`
-3. `~/.config/kraken/skills`
+3. `~/kraken/skills`
 4. `~/.kraken/skills`
 
 Implementation:
@@ -143,9 +143,11 @@ Current install scope:
 
 Default install location:
 
-- `~/.config/kraken/skills`
+- `~/kraken/skills`
 
 If `KRAKEN_SKILLS_DIR` is set, that path becomes the install target.
+
+If the default install directory does not exist yet, the installer creates it automatically.
 
 Install input modes:
 
