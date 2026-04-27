@@ -136,6 +136,10 @@ export function createSessionStore(params: {
     const entries = await fs.readdir(sessionDir, { withFileTypes: true })
     for (const entry of entries) {
       if (entry.isFile() && entry.name.endsWith('.json')) {
+        const sessionId = entry.name.slice(0, -5)
+        if (sessionId.startsWith('scheduled-')) {
+          continue
+        }
         await fs.unlink(path.join(sessionDir, entry.name))
       }
     }

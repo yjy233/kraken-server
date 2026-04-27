@@ -59,6 +59,7 @@ export function useScheduledJobs(active: boolean) {
           [message.execution.jobId]: nextList,
         }
       })
+      setLoading(false)
     }
   }, [])
 

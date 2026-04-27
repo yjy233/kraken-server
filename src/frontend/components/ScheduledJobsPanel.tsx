@@ -430,6 +430,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                 const isExpanded = expandedJobId === job.id
                 const isPending = pendingJobIds.includes(job.id)
                 const templateSession = job.sessionTemplateId ? sessionsById.get(job.sessionTemplateId) : null
+                const targetSession = job.targetSessionId ? sessionsById.get(job.targetSessionId) : null
 
                 return (
                   <article key={job.id} className="scheduled-job-card">
@@ -449,6 +450,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                       <span>Next: {job.nextRunAt ? formatDateTime(job.nextRunAt) : 'None'}</span>
                       <span>Last success: {job.lastSuccessAt ? formatDateTime(job.lastSuccessAt) : 'Never'}</span>
                       <span>Template: {templateSession?.title || (job.sessionTemplateId ? shortId(job.sessionTemplateId) : 'None')}</span>
+                      <span>Target: {targetSession?.title || (job.targetSessionId ? shortId(job.targetSessionId) : 'Pending')}</span>
                     </div>
 
                     <div className="scheduled-job-actions">
@@ -464,6 +466,11 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                       <button className="icon-button" type="button" onClick={() => void handleToggleHistory(job.id)} disabled={isPending}>
                         {isExpanded ? 'Hide history' : 'History'}
                       </button>
+                      {job.targetSessionId && (
+                        <button className="icon-button" type="button" onClick={() => void onOpenSession(job.targetSessionId!)} disabled={isPending}>
+                          Open session
+                        </button>
+                      )}
                       <button className="icon-button danger" type="button" onClick={() => void handleDelete(job.id)} disabled={isPending}>
                         Delete
                       </button>

@@ -54,6 +54,16 @@ export default function App() {
   const chat = useChat(sessions.activeSession, handleSessionUpdate, sessions.refresh)
   const scheduled = useScheduledJobs(activeTab === 'scheduled')
 
+  useEffect(() => {
+    const hasSucceededExecution = Object.values(scheduled.executionsByJob)
+      .flat()
+      .some((execution) => execution.status === 'succeeded')
+    if (!hasSucceededExecution) {
+      return
+    }
+    void sessions.refresh()
+  }, [scheduled.executionsByJob, sessions])
+
   const displayError = activeTab === 'chat'
     ? (chat.error || configError)
     : configError
