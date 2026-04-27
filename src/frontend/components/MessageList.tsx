@@ -188,28 +188,34 @@ const MessageItem: React.FC<{
   toolRecords?: ToolCallRecord[] | undefined
 }> = ({ message, toolRecords }) => {
   const isAssistant = message.role === 'assistant'
+  const timestamp = formatMessageTimestamp(message.createdAt)
   return (
     <div className="message-row" data-role={message.role}>
       {isAssistant && (
         <img src="/logo.png" className="agent-avatar" alt="Kraken" />
       )}
-      <article className="message" data-role={message.role}>
-        {isAssistant && toolRecords && toolRecords.length > 0 && (
-          <div className="agent-traces">
-            {toolRecords.map((r) => (
-              <ToolCallItem key={r.toolUseId} record={r} />
-            ))}
-          </div>
-        )}
-        <div
-          className="message-body"
-          dangerouslySetInnerHTML={
-            isAssistant
-              ? renderMarkdown(message.content)
-              : { __html: escapeHtml(message.content).replace(/\n/g, '<br>') }
-          }
-        />
-      </article>
+      <div className="message-stack" data-role={message.role}>
+        <div className="message-timestamp" aria-label={`Sent at ${timestamp}`}>
+          {timestamp}
+        </div>
+        <article className="message" data-role={message.role}>
+          {isAssistant && toolRecords && toolRecords.length > 0 && (
+            <div className="agent-traces">
+              {toolRecords.map((r) => (
+                <ToolCallItem key={r.toolUseId} record={r} />
+              ))}
+            </div>
+          )}
+          <div
+            className="message-body"
+            dangerouslySetInnerHTML={
+              isAssistant
+                ? renderMarkdown(message.content)
+                : { __html: escapeHtml(message.content).replace(/\n/g, '<br>') }
+            }
+          />
+        </article>
+      </div>
     </div>
   )
 }
@@ -218,4 +224,12 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
+}
+
+function formatMessageTimestamp(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString()
 }

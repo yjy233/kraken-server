@@ -459,6 +459,22 @@ body {
   justify-content: flex-end;
 }
 
+.message-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(720px, 85%);
+}
+
+.message-stack[data-role="user"] {
+  align-items: flex-end;
+}
+
+.message-stack[data-role="assistant"] {
+  align-items: flex-start;
+}
+
 .agent-avatar {
   width: 28px;
   height: 28px;
@@ -475,7 +491,7 @@ body {
   line-height: 1.6;
   width: auto;
   min-width: 0;
-  max-width: min(720px, 85%);
+  max-width: 100%;
 }
 
 .message[data-role="user"] {
@@ -496,6 +512,19 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
+}
+
+.message-timestamp {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.message-stack:hover .message-timestamp {
+  opacity: 1;
 }
 
 /* ─── Agent Reply (Streaming) ────────────────────── */
