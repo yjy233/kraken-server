@@ -24,6 +24,7 @@ import type { ScheduledJob, ScheduledJobSchedule } from './scheduler/types.js'
 import { createWsHub } from './ws/hub.js'
 import type { WsClientMessage, WsServerMessage } from './ws/protocol.js'
 import { isWsClientMessage } from './ws/protocol.js'
+import { createWorkspaceBrowserService } from './workspace/browser.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -99,6 +100,11 @@ const agentService = createAgentService({
 })
 
 const schedulerStore = createSchedulerStore(SCHEDULED_JOBS_DIR)
+const workspaceBrowser = createWorkspaceBrowserService({
+  defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+  sensitivePaths: SENSITIVE_PATHS,
+  enablePathSandbox: ENABLE_PATH_SANDBOX,
+})
 const schedulerService = createSchedulerService({
   enabled: SCHEDULER_ENABLED,
   pollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
@@ -181,6 +187,59 @@ app.get('/api/tools', (_req, res) => {
       input_schema: tool.input_schema,
     })),
   })
+})
+
+app.get('/api/workspace/tree', async (req, res, next) => {
+  try {
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''
+    const directoryPath = typeof req.query.path === 'string' ? req.query.path.trim() : '.'
+    const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+    const input: {
+      sessionId?: string
+      sandbox?: SessionSandboxConfig | undefined
+      path?: string
+    } = {
+      path: directoryPath || '.',
+    }
+    if (session?.id) {
+      input.sessionId = session.id
+    }
+    if (session?.sandbox !== undefined) {
+      input.sandbox = session.sandbox
+    }
+    const listing = await workspaceBrowser.listDirectory(input)
+    res.json({ ok: true, ...listing })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/workspace/file', async (req, res, next) => {
+  try {
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''
+    const filePath = typeof req.query.path === 'string' ? req.query.path.trim() : ''
+    if (!filePath) {
+      return res.status(400).json({ ok: false, error: 'path query parameter is required' })
+    }
+    const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+    const input: {
+      sessionId?: string
+      sandbox?: SessionSandboxConfig | undefined
+      path: string
+    } = {
+      path: filePath,
+    }
+    if (session?.id) {
+      input.sessionId = session.id
+    }
+    if (session?.sandbox !== undefined) {
+      input.sandbox = session.sandbox
+    }
+    const file = await workspaceBrowser.readFile(input)
+    res.json({ ok: true, ...file })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.get('/api/sessions', async (_req, res, next) => {

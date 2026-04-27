@@ -11,6 +11,8 @@ import type {
   ScheduledExecution,
   ScheduledJob,
   SchedulerStatus,
+  WorkspaceFile,
+  WorkspaceListing,
 } from './types.js'
 
 const BASE = ''
@@ -97,6 +99,34 @@ export async function fetchJobExecutions(jobId: string): Promise<ScheduledExecut
 
 export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return request('/api/scheduler/status')
+}
+
+export async function fetchWorkspaceTree(params: {
+  sessionId?: string | null
+  path?: string
+}): Promise<WorkspaceListing> {
+  const query = new URLSearchParams()
+  if (params.sessionId) {
+    query.set('sessionId', params.sessionId)
+  }
+  if (params.path) {
+    query.set('path', params.path)
+  }
+  const data = await request<WorkspaceListing>(`/api/workspace/tree?${query.toString()}`)
+  return data
+}
+
+export async function fetchWorkspaceFile(params: {
+  sessionId?: string | null
+  path: string
+}): Promise<WorkspaceFile> {
+  const query = new URLSearchParams()
+  if (params.sessionId) {
+    query.set('sessionId', params.sessionId)
+  }
+  query.set('path', params.path)
+  const data = await request<WorkspaceFile>(`/api/workspace/file?${query.toString()}`)
+  return data
 }
 
 export interface ChatPayload {

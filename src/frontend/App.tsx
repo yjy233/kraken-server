@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar.js'
 import { MessageList } from './components/MessageList.js'
 import { Composer } from './components/Composer.js'
 import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
+import { WorkspacePanel } from './components/WorkspacePanel.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
 import { useChat } from './hooks/useChat.js'
@@ -12,7 +13,7 @@ import type { SessionSandboxConfig } from './types.js'
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
-  const [activeTab, setActiveTab] = useState<'chat' | 'scheduled'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled'>('chat')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
@@ -147,6 +148,14 @@ export default function App() {
               <button
                 className="panel-tab"
                 type="button"
+                data-active={activeTab === 'files'}
+                onClick={() => setActiveTab('files')}
+              >
+                Files
+              </button>
+              <button
+                className="panel-tab"
+                type="button"
                 data-active={activeTab === 'scheduled'}
                 onClick={() => setActiveTab('scheduled')}
               >
@@ -194,6 +203,13 @@ export default function App() {
                   </button>
                 </div>
               </>
+            ) : activeTab === 'files' ? (
+              <div className="scheduled-header-copy">
+                <h2>Workspace Files</h2>
+                <p>
+                  Browse the current workspace and preview Markdown files directly in the app.
+                </p>
+              </div>
             ) : (
               <div className="scheduled-header-copy">
                 <h2>Scheduled Jobs</h2>
@@ -214,6 +230,13 @@ export default function App() {
               <button className="ghost-button" type="button" onClick={handleNewChat}>
                 New chat
               </button>
+            </div>
+          ) : activeTab === 'files' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {sessions.activeSession?.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || 'Workspace'}
+              </span>
+              <span className="model-pill">Read only</span>
             </div>
           ) : (
             <div className="header-meta">
@@ -250,6 +273,11 @@ export default function App() {
 
             <Composer sending={chat.sending} onSend={handleSend} onCancel={chat.cancel} />
           </>
+        ) : activeTab === 'files' ? (
+          <WorkspacePanel
+            session={sessions.activeSession}
+            fallbackWorkspaceRoot={config?.defaultWorkspaceRoot || ''}
+          />
         ) : (
           <ScheduledJobsPanel
             jobs={scheduled.jobs}

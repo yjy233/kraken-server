@@ -29,6 +29,27 @@ export interface ToolInfo {
   input_schema: Record<string, unknown>
 }
 
+export interface WorkspaceEntry {
+  name: string
+  path: string
+  kind: 'file' | 'directory'
+  extension?: string
+}
+
+export interface WorkspaceListing {
+  workspaceRoot: string
+  path: string
+  exists: boolean
+  entries: WorkspaceEntry[]
+}
+
+export interface WorkspaceFile {
+  workspaceRoot: string
+  path: string
+  contentType: 'markdown' | 'text'
+  content: string
+}
+
 export interface Session {
   id: string
   title: string
