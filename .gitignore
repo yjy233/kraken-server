@@ -39,12 +39,7 @@ pnpm-debug.log*
 
 # Runtime data
 .sessions/
-
-node_modules/
-.env
-.sessions/
-dist/
-coverage/
-
-.env
+.scheduled-jobs/
+.scheduled-jobs/executions/
+.scheduled-jobs/logs/
 package-lock.json

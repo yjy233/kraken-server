@@ -6,12 +6,13 @@
     "type": "interval",
     "everyMs": 300000
   },
-  "nextRunAt": "2026-04-26T15:19:52.528Z",
+  "nextRunAt": "2026-04-27T14:46:39.641Z",
   "overlapPolicy": "skip",
   "id": "b3a16b08-c6dc-4575-9216-921277b4c4f3",
   "createdAt": "2026-04-26T14:46:51.865Z",
-  "updatedAt": "2026-04-26T15:14:52.528Z",
-  "lastRunAt": "2026-04-26T15:13:27.726Z",
-  "lastSuccessAt": "2026-04-26T15:13:35.635Z",
-  "lastFailureAt": null
+  "updatedAt": "2026-04-27T14:41:39.642Z",
+  "lastRunAt": "2026-04-27T14:41:30.038Z",
+  "lastSuccessAt": "2026-04-27T14:41:39.641Z",
+  "lastFailureAt": null,
+  "targetSessionId": "scheduled-b3a16b08-c6dc-4575-9216-921277b4c4f3"
 }

@@ -239,8 +239,8 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
             <div>
               <h3>{editingJobId ? 'Edit Job' : 'New Job'}</h3>
               <p>
-                Each execution creates a new session. Template sessions copy prompt, model,
-                sandbox, and loaded skills, but not message history.
+                Each job reuses one fixed session. Template sessions copy prompt, model,
+                sandbox, and loaded skills when that target session is first established.
               </p>
             </div>
             {editingJobId && (

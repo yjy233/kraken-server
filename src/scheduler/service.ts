@@ -30,7 +30,9 @@ interface AgentRunnerLike {
     systemPrompt?: string
     sandbox?: SessionRecord['sandbox']
     loadedSkills?: string[]
-    createNewSession: boolean
+    createNewSession?: boolean
+    forceSessionId?: string
+    sessionId?: string | null
     title?: string
   }, emit: EmitFn | null) => Promise<{
     reply: string
@@ -49,6 +51,9 @@ export function createSchedulerService(params: {
   store: SchedulerStoreLike
   sessionStore: SessionStoreLike
   agentRunner: AgentRunnerLike
+  onExecutionCreated?: (execution: ScheduledExecution) => void
+  onExecutionUpdated?: (execution: ScheduledExecution) => void
+  onJobUpdated?: (job: ScheduledJob) => void
 }) {
   const runningJobIds = new Set<string>()
   let intervalHandle: NodeJS.Timeout | null = null
@@ -139,19 +144,24 @@ export function createSchedulerService(params: {
       triggerType,
       attempt: 1,
     })
+    params.onExecutionCreated?.(execution)
 
     try {
-      await params.store.updateExecution(execution.id, {
+      const runningExecution = await params.store.updateExecution(execution.id, {
         status: 'running',
         startedAt: baseTimestamp,
       })
+      params.onExecutionUpdated?.(runningExecution)
 
       const templateSession = job.sessionTemplateId
         ? await params.sessionStore.loadSession(job.sessionTemplateId)
         : null
+      const targetSessionId = job.targetSessionId || `scheduled-${job.id}`
 
       const runInput: {
-        createNewSession: true
+        createNewSession?: boolean
+        forceSessionId?: string
+        sessionId?: string | null
         title: string
         message: string
         model?: string
@@ -159,8 +169,9 @@ export function createSchedulerService(params: {
         sandbox?: SessionRecord['sandbox']
         loadedSkills?: string[]
       } = {
-        createNewSession: true,
-        title: `${job.name} ${baseTimestamp}`,
+        sessionId: targetSessionId,
+        forceSessionId: targetSessionId,
+        title: job.name,
         message: job.message,
         loadedSkills: job.loadedSkills || templateSession?.loadedSkills || [],
       }
@@ -179,7 +190,7 @@ export function createSchedulerService(params: {
 
       const result = await params.agentRunner.run(runInput, null)
 
-      await params.store.updateExecution(execution.id, {
+      const succeededExecution = await params.store.updateExecution(execution.id, {
         sessionId: result.session.id,
         status: 'succeeded',
         finishedAt: new Date().toISOString(),
@@ -189,13 +200,16 @@ export function createSchedulerService(params: {
           toolExecutionCount: result.run.toolExecutions.length,
         },
       })
+      params.onExecutionUpdated?.(succeededExecution)
 
-      await params.store.updateJob(job.id, {
+      const updatedJob = await params.store.updateJob(job.id, {
+        targetSessionId,
         lastRunAt: baseTimestamp,
         lastSuccessAt: new Date().toISOString(),
         lastFailureAt: null,
         nextRunAt: computeSubsequentRunAt(job, new Date()),
       })
+      params.onJobUpdated?.(updatedJob)
 
       const latest = await params.store.getExecution(execution.id)
       if (!latest) {
@@ -203,17 +217,20 @@ export function createSchedulerService(params: {
       }
       return latest
     } catch (error) {
-      await params.store.updateExecution(execution.id, {
+      const failedExecution = await params.store.updateExecution(execution.id, {
         status: 'failed',
         startedAt: baseTimestamp,
         finishedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown scheduler execution error',
       })
-      await params.store.updateJob(job.id, {
+      params.onExecutionUpdated?.(failedExecution)
+      const updatedJob = await params.store.updateJob(job.id, {
+        targetSessionId: job.targetSessionId || `scheduled-${job.id}`,
         lastRunAt: baseTimestamp,
         lastFailureAt: new Date().toISOString(),
         nextRunAt: computeSubsequentRunAt(job, new Date()),
       })
+      params.onJobUpdated?.(updatedJob)
       const latest = await params.store.getExecution(execution.id)
       if (!latest) {
         throw new Error(`Scheduled execution not found after failure update: ${execution.id}`)

@@ -51,6 +51,7 @@ export interface RunAgentServiceRequest {
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
   createNewSession?: boolean
+  forceSessionId?: string | undefined
   title?: string
 }
 
@@ -135,6 +136,7 @@ export function createAgentService(config: AgentServiceConfig) {
 
     if (!session) {
       const sessionInput: {
+        id?: string | undefined
         title: string
         systemPrompt?: string | undefined
         model: string
@@ -143,6 +145,9 @@ export function createAgentService(config: AgentServiceConfig) {
       } = {
         title: input.title || sanitizeTitle(rawMessage),
         model: requestedModel,
+      }
+      if (input.forceSessionId) {
+        sessionInput.id = input.forceSessionId
       }
       if (typeof input.systemPrompt === 'string') {
         sessionInput.systemPrompt = input.systemPrompt

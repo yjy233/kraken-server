@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ScheduledExecution, ScheduledJob, SchedulerStatus } from '../types.js'
-import {
-  createScheduledJob,
-  deleteScheduledJob,
-  fetchJobExecutions,
-  fetchScheduledJobs,
-  fetchSchedulerStatus,
-  runScheduledJob,
-  updateScheduledJob,
-} from '../api.js'
+import { wsClient } from '../ws-client.js'
+import type { WsServerMessage } from '../../ws/protocol.js'
 
 export function useScheduledJobs(active: boolean) {
   const [jobs, setJobs] = useState<ScheduledJob[]>([])
@@ -17,116 +10,162 @@ export function useScheduledJobs(active: boolean) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [nextJobs, nextStatus] = await Promise.all([
-        fetchScheduledJobs(),
-        fetchSchedulerStatus(),
-      ])
-      setJobs(nextJobs)
-      setStatus(nextStatus)
-      setError(null)
-      return { jobs: nextJobs, status: nextStatus }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setError(message)
-      throw error
-    } finally {
+  const handleMessage = useCallback((message: WsServerMessage) => {
+    if (message.type === 'request:error') {
       setLoading(false)
+      setError(message.error)
+      return
     }
-  }, [])
-
-  const loadExecutions = useCallback(async (jobId: string) => {
-    try {
-      const executions = await fetchJobExecutions(jobId)
-      setExecutionsByJob((prev) => ({
-        ...prev,
-        [jobId]: executions,
-      }))
+    if (message.type === 'scheduler:snapshot') {
+      setJobs(message.payload.jobs)
+      setStatus(message.payload.status)
+      setLoading(false)
       setError(null)
-      return executions
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setError(message)
-      throw error
+      return
     }
-  }, [])
-
-  const createJob = useCallback(async (body: Record<string, unknown>) => {
-    try {
-      const result = await createScheduledJob(body)
-      setError(null)
-      await refresh()
-      return result.job
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setError(message)
-      throw error
-    }
-  }, [refresh])
-
-  const updateJob = useCallback(async (jobId: string, body: Record<string, unknown>) => {
-    try {
-      const result = await updateScheduledJob(jobId, body)
-      setError(null)
-      await refresh()
-      if (executionsByJob[jobId]) {
-        await loadExecutions(jobId)
-      }
-      return result.job
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setError(message)
-      throw error
-    }
-  }, [executionsByJob, loadExecutions, refresh])
-
-  const removeJob = useCallback(async (jobId: string) => {
-    try {
-      await deleteScheduledJob(jobId)
-      setExecutionsByJob((prev) => {
-        const next = { ...prev }
-        delete next[jobId]
+    if (message.type === 'scheduler:job-created' || message.type === 'scheduler:job-updated') {
+      setJobs((prev) => {
+        const next = prev.filter((job) => job.id !== message.job.id)
+        next.unshift(message.job)
         return next
       })
       setError(null)
-      await refresh()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setError(message)
-      throw error
+      return
     }
-  }, [refresh])
+    if (message.type === 'scheduler:job-deleted') {
+      setJobs((prev) => prev.filter((job) => job.id !== message.jobId))
+      setExecutionsByJob((prev) => {
+        const next = { ...prev }
+        delete next[message.jobId]
+        return next
+      })
+      setError(null)
+      return
+    }
+    if (message.type === 'scheduler:job-executions') {
+      setExecutionsByJob((prev) => ({
+        ...prev,
+        [message.jobId]: message.executions,
+      }))
+      setError(null)
+      return
+    }
+    if (message.type === 'scheduler:execution-created' || message.type === 'scheduler:execution-updated') {
+      setExecutionsByJob((prev) => {
+        const list = prev[message.execution.jobId] || []
+        const nextList = [message.execution, ...list.filter((item) => item.id !== message.execution.id)]
+        return {
+          ...prev,
+          [message.execution.jobId]: nextList,
+        }
+      })
+    }
+  }, [])
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    const response = await wsClient.request({
+      type: 'scheduler:refresh',
+      requestId: globalThis.crypto.randomUUID(),
+    }, (message): message is Extract<WsServerMessage, { type: 'scheduler:snapshot' }> => {
+      return message.type === 'scheduler:snapshot'
+    })
+    setJobs(response.payload.jobs)
+    setStatus(response.payload.status)
+    setLoading(false)
+    setError(null)
+    return response.payload
+  }, [])
+
+  const loadExecutions = useCallback(async (jobId: string) => {
+    const response = await wsClient.request({
+      type: 'scheduled-job:load-executions',
+      requestId: globalThis.crypto.randomUUID(),
+      jobId,
+    }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-executions' }> => {
+      return message.type === 'scheduler:job-executions' && message.jobId === jobId
+    })
+    setExecutionsByJob((prev) => ({
+      ...prev,
+      [jobId]: response.executions,
+    }))
+    setError(null)
+    return response.executions
+  }, [])
+
+  const createJob = useCallback(async (body: Record<string, unknown>) => {
+    const response = await wsClient.request({
+      type: 'scheduled-job:create',
+      requestId: globalThis.crypto.randomUUID(),
+      payload: body,
+    }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-created' }> => {
+      return message.type === 'scheduler:job-created'
+    })
+    setError(null)
+    return response.job
+  }, [])
+
+  const updateJob = useCallback(async (jobId: string, body: Record<string, unknown>) => {
+    const response = await wsClient.request({
+      type: 'scheduled-job:update',
+      requestId: globalThis.crypto.randomUUID(),
+      jobId,
+      payload: body,
+    }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-updated' }> => {
+      return message.type === 'scheduler:job-updated' && message.job.id === jobId
+    })
+    setError(null)
+    return response.job
+  }, [])
+
+  const removeJob = useCallback(async (jobId: string) => {
+    await wsClient.request({
+      type: 'scheduled-job:delete',
+      requestId: globalThis.crypto.randomUUID(),
+      jobId,
+    }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-deleted' }> => {
+      return message.type === 'scheduler:job-deleted' && message.jobId === jobId
+    })
+    setError(null)
+  }, [])
 
   const runJobNow = useCallback(async (jobId: string) => {
-    try {
-      const result = await runScheduledJob(jobId)
-      setError(null)
-      await refresh()
-      await loadExecutions(jobId)
-      return result.execution
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setError(message)
-      throw error
-    }
-  }, [loadExecutions, refresh])
+    const response = await wsClient.request({
+      type: 'scheduled-job:run',
+      requestId: globalThis.crypto.randomUUID(),
+      jobId,
+    }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-executions' }> => {
+      return message.type === 'scheduler:job-executions' && message.jobId === jobId
+    })
+    setExecutionsByJob((prev) => ({
+      ...prev,
+      [jobId]: response.executions,
+    }))
+    setError(null)
+    return response.executions[0]
+  }, [])
 
   useEffect(() => {
     if (!active) {
       return
     }
 
-    void refresh().catch(() => {})
-    const timer = window.setInterval(() => {
-      void refresh().catch(() => {})
-    }, 15000)
+    wsClient.connect()
+    const unsubscribe = wsClient.subscribe(handleMessage)
+    const subscribe = () => wsClient.send({
+      type: 'scheduler:subscribe',
+      requestId: globalThis.crypto.randomUUID(),
+    })
+    subscribe()
+    const unsubscribeOpen = wsClient.onOpen(() => {
+      subscribe()
+    })
 
     return () => {
-      window.clearInterval(timer)
+      unsubscribe()
+      unsubscribeOpen()
     }
-  }, [active, refresh])
+  }, [active, handleMessage])
 
   return {
     jobs,

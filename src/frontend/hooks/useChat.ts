@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type { Session, SessionMessage, RuntimeEvent, SessionSandboxConfig } from '../types.js'
-import { streamChat as apiStreamChat } from '../api.js'
+import { wsClient } from '../ws-client.js'
+import type { WsServerMessage } from '../../ws/protocol.js'
 
 interface ChatState {
   sending: boolean
@@ -22,6 +23,50 @@ export function useChat(
   })
 
   const abortRef = useRef<(() => void) | null>(null)
+  const requestIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    wsClient.connect()
+    const unsubscribe = wsClient.subscribe((message: WsServerMessage) => {
+      const requestId = requestIdRef.current
+      if (!requestId) {
+        return
+      }
+
+      if (message.type === 'request:error' && message.requestId === requestId) {
+        setState((prev) => ({ ...prev, sending: false, error: message.error, streamingText: '' }))
+        requestIdRef.current = null
+        return
+      }
+
+      if (message.type === 'chat:event' && message.requestId === requestId) {
+        setState((prev) => {
+          const next: ChatState = {
+            ...prev,
+            runtimeEvents: [...prev.runtimeEvents, { event: message.event, data: message.data, at: new Date().toISOString() }].slice(-80),
+          }
+          if (message.event === 'assistant:delta') {
+            next.streamingText = ((message.data as { text?: string }).text) || ''
+          }
+          return next
+        })
+        return
+      }
+
+      if (message.type === 'chat:complete' && message.requestId === requestId) {
+        void (async () => {
+          onSessionUpdate(message.payload.session)
+          await onSessionsRefresh()
+          setState((prev) => ({ ...prev, sending: false, streamingText: '' }))
+          requestIdRef.current = null
+        })()
+      }
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [onSessionUpdate, onSessionsRefresh])
 
   const send = useCallback(
     async (message: string, systemPrompt: string, sandbox?: SessionSandboxConfig) => {
@@ -51,36 +96,33 @@ export function useChat(
       const messagesWithOptimistic = [...baseSession.messages, optimisticUserMsg]
       onSessionUpdate({ ...baseSession, messages: messagesWithOptimistic })
 
-      const payload = {
+      const payload: {
+        sessionId: string | null
+        systemPrompt: string
+        message: string
+        sandbox?: SessionSandboxConfig
+      } = {
         sessionId: activeSession?.id || null,
         systemPrompt: systemPrompt.trim(),
         message: message.trim(),
-        sandbox,
+      }
+      if (sandbox !== undefined) {
+        payload.sandbox = sandbox
       }
 
-      abortRef.current = apiStreamChat(payload, {
-        onEvent: (event, data) => {
-          setState((prev) => {
-            const next: ChatState = {
-              ...prev,
-              runtimeEvents: [...prev.runtimeEvents, { event, data, at: new Date().toISOString() }].slice(-80),
-            }
-            // 提取 assistant 流式文本
-            if (event === 'assistant:delta') {
-              next.streamingText = (data as any).text || ''
-            }
-            return next
-          })
-        },
-        onComplete: async (data) => {
-          onSessionUpdate(data.session)
-          await onSessionsRefresh()
-          setState((prev) => ({ ...prev, sending: false, streamingText: '' }))
-        },
-        onError: (error) => {
-          setState((prev) => ({ ...prev, sending: false, error: error.message, streamingText: '' }))
-        },
+      const requestId = globalThis.crypto.randomUUID()
+      requestIdRef.current = requestId
+      wsClient.send({
+        type: 'chat:start',
+        requestId,
+        payload,
       })
+      abortRef.current = () => {
+        wsClient.send({
+          type: 'chat:cancel',
+          requestId,
+        })
+      }
     },
     [activeSession, onSessionUpdate, onSessionsRefresh]
   )

@@ -108,6 +108,7 @@ export interface ScheduledJob {
   id: string
   name: string
   enabled: boolean
+  targetSessionId?: string
   sessionTemplateId?: string
   message: string
   model?: string

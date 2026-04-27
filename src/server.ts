@@ -2,8 +2,10 @@ import './bootstrap.js'
 
 import path from 'node:path'
 import os from 'node:os'
+import http from 'node:http'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
+import { WebSocketServer, type WebSocket } from 'ws'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
 import { parseSensitivePaths } from './tools/sandbox.js'
 import type { SessionSandboxConfig } from './tools/types.js'
@@ -19,6 +21,9 @@ import { createSchedulerStore } from './scheduler/store.js'
 import { computeNextRunAt } from './scheduler/planner.js'
 import { createSchedulerService } from './scheduler/service.js'
 import type { ScheduledJob, ScheduledJobSchedule } from './scheduler/types.js'
+import { createWsHub } from './ws/hub.js'
+import type { WsClientMessage, WsServerMessage } from './ws/protocol.js'
+import { isWsClientMessage } from './ws/protocol.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -77,6 +82,8 @@ const sessionStore = createSessionStore({
   normalizeSystemPrompt,
 })
 
+const wsHub = createWsHub()
+
 const agentService = createAgentService({
   defaultModel: DEFAULT_MODEL,
   baseSystemPrompt: BASE_SYSTEM_PROMPT,
@@ -99,6 +106,24 @@ const schedulerService = createSchedulerService({
   store: schedulerStore,
   sessionStore,
   agentRunner: agentService,
+  onExecutionCreated: (execution) => {
+    wsHub.broadcastScheduler({
+      type: 'scheduler:execution-created',
+      execution,
+    })
+  },
+  onExecutionUpdated: (execution) => {
+    wsHub.broadcastScheduler({
+      type: 'scheduler:execution-updated',
+      execution,
+    })
+  },
+  onJobUpdated: (job) => {
+    wsHub.broadcastScheduler({
+      type: 'scheduler:job-updated',
+      job,
+    })
+  },
 })
 
 const app = express()
@@ -385,7 +410,25 @@ app.use((error: unknown, _req: express.Request, res: express.Response, next: exp
   res.status(status).json({ ok: false, error: message })
 })
 
-app.listen(PORT, HOST, () => {
+const server = http.createServer(app)
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+})
+
+wss.on('connection', (socket: WebSocket) => {
+  const client = wsHub.addClient(socket)
+
+  socket.on('message', (raw: Buffer) => {
+    void handleWsMessage(client.id, String(raw))
+  })
+
+  socket.on('close', () => {
+    wsHub.removeClient(client.id)
+  })
+})
+
+server.listen(PORT, HOST, () => {
   console.log(`${APP_TITLE} listening on http://${HOST}:${PORT}`)
 })
 
@@ -416,6 +459,9 @@ function buildScheduledJobInput(body: unknown): Omit<ScheduledJob, 'id' | 'creat
     schedule,
     nextRunAt: computeNextRunAt(schedule),
     overlapPolicy: record.overlapPolicy === 'parallel' ? 'parallel' : 'skip',
+  }
+  if (typeof record.targetSessionId === 'string' && record.targetSessionId.trim()) {
+    job.targetSessionId = record.targetSessionId.trim()
   }
   if (typeof record.sessionTemplateId === 'string' && record.sessionTemplateId.trim()) {
     job.sessionTemplateId = record.sessionTemplateId.trim()
@@ -454,6 +500,11 @@ function buildScheduledJobPatch(
   if (typeof record.sessionTemplateId === 'string') {
     if (record.sessionTemplateId.trim()) {
       patch.sessionTemplateId = record.sessionTemplateId.trim()
+    }
+  }
+  if (typeof record.targetSessionId === 'string') {
+    if (record.targetSessionId.trim()) {
+      patch.targetSessionId = record.targetSessionId.trim()
     }
   }
   if (typeof record.model === 'string') {
@@ -523,4 +574,180 @@ function initSse(res: express.Response) {
 function writeSse(res: express.Response, event: string, payload: unknown) {
   res.write(`event: ${event}\n`)
   res.write(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
+async function handleWsMessage(clientId: string, raw: string): Promise<void> {
+  const client = getWsClient(clientId)
+  if (!client) {
+    return
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    wsHub.send(client, {
+      type: 'request:error',
+      error: 'Invalid JSON message',
+    })
+    return
+  }
+
+  if (!isWsClientMessage(parsed)) {
+    wsHub.send(client, {
+      type: 'request:error',
+      error: 'Invalid WebSocket message',
+    })
+    return
+  }
+
+  const message = parsed as WsClientMessage
+
+  if (message.type === 'heartbeat:ping') {
+    wsHub.send(client, {
+      type: 'heartbeat:pong',
+      ts: message.ts,
+    })
+    return
+  }
+
+  try {
+    switch (message.type) {
+      case 'chat:start': {
+        if (!CONFIGURED) {
+          throw new Error('No API key is configured. Add OPENROUTER_API_KEY to .env or your shell environment.')
+        }
+        client.activeChatRequestIds.add(message.requestId)
+        const result = await agentService.runRequest(message.payload, (event, data) => {
+          if (!client.activeChatRequestIds.has(message.requestId)) {
+            return
+          }
+          wsHub.send(client, {
+            type: 'chat:event',
+            requestId: message.requestId,
+            event,
+            data,
+          })
+        })
+        wsHub.send(client, {
+          type: 'chat:complete',
+          requestId: message.requestId,
+          payload: {
+            ok: true,
+            reply: result.reply,
+            session: result.session as unknown as import('./frontend/types.js').Session,
+            run: result.run,
+          },
+        })
+        client.activeChatRequestIds.delete(message.requestId)
+        return
+      }
+      case 'chat:cancel': {
+        client.activeChatRequestIds.delete(message.requestId)
+        return
+      }
+      case 'scheduler:subscribe':
+      case 'scheduler:refresh': {
+        client.schedulerSubscribed = true
+        const [jobs, status] = await Promise.all([
+          schedulerStore.listJobs(),
+          schedulerService.getStatus(),
+        ])
+        wsHub.send(client, {
+          type: 'scheduler:snapshot',
+          requestId: message.requestId,
+          payload: {
+            jobs,
+            status,
+          },
+        })
+        return
+      }
+      case 'scheduled-job:create': {
+        const job = await schedulerStore.createJob(buildScheduledJobInput(message.payload))
+        wsHub.broadcastScheduler({
+          type: 'scheduler:job-created',
+          requestId: message.requestId,
+          job,
+        })
+        await broadcastSchedulerSnapshot()
+        return
+      }
+      case 'scheduled-job:update': {
+        const current = await schedulerStore.getJob(message.jobId)
+        if (!current) {
+          throw new Error('Scheduled job not found')
+        }
+        const job = await schedulerStore.updateJob(message.jobId, buildScheduledJobPatch(message.payload, current))
+        wsHub.broadcastScheduler({
+          type: 'scheduler:job-updated',
+          requestId: message.requestId,
+          job,
+        })
+        await broadcastSchedulerSnapshot()
+        return
+      }
+      case 'scheduled-job:delete': {
+        await schedulerStore.deleteJob(message.jobId)
+        wsHub.broadcastScheduler({
+          type: 'scheduler:job-deleted',
+          requestId: message.requestId,
+          jobId: message.jobId,
+        })
+        await broadcastSchedulerSnapshot()
+        return
+      }
+      case 'scheduled-job:run': {
+        await schedulerService.runNow(message.jobId)
+        const executions = await schedulerStore.listExecutions(message.jobId)
+        wsHub.send(client, {
+          type: 'scheduler:job-executions',
+          requestId: message.requestId,
+          jobId: message.jobId,
+          executions,
+        })
+        await broadcastSchedulerSnapshot()
+        return
+      }
+      case 'scheduled-job:load-executions': {
+        const executions = await schedulerStore.listExecutions(message.jobId)
+        wsHub.send(client, {
+          type: 'scheduler:job-executions',
+          requestId: message.requestId,
+          jobId: message.jobId,
+          executions,
+        })
+        return
+      }
+      default:
+        return
+    }
+  } catch (error) {
+    const messagePayload: WsServerMessage = {
+      type: 'request:error',
+      error: error instanceof Error ? error.message : 'Unknown WebSocket error',
+    }
+    if ('requestId' in message && typeof message.requestId === 'string') {
+      messagePayload.requestId = message.requestId
+    }
+    wsHub.send(client, messagePayload)
+  }
+}
+
+function getWsClient(clientId: string) {
+  return wsHub.getClient(clientId)
+}
+
+async function broadcastSchedulerSnapshot() {
+  const [jobs, status] = await Promise.all([
+    schedulerStore.listJobs(),
+    schedulerService.getStatus(),
+  ])
+  wsHub.broadcastScheduler({
+    type: 'scheduler:snapshot',
+    payload: {
+      jobs,
+      status,
+    },
+  })
 }

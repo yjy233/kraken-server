@@ -51,6 +51,7 @@ export function createSessionStore(params: {
   mkdirSync(sessionDir, { recursive: true })
 
   function createSession(input: {
+    id?: string | undefined
     title: string
     systemPrompt?: string | undefined
     model: string
@@ -59,7 +60,7 @@ export function createSessionStore(params: {
   }): SessionRecord {
     const timestamp = new Date().toISOString()
     return {
-      id: crypto.randomUUID(),
+      id: input.id && isSafeSessionId(input.id) ? input.id : crypto.randomUUID(),
       title: sanitizeTitle(input.title) || 'New chat',
       model: input.model || defaultModel,
       systemPrompt: normalizeSystemPrompt(input.systemPrompt),
