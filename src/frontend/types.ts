@@ -67,6 +67,28 @@ export interface RuntimeEvent {
   at: string
 }
 
+export interface RuntimeTimelineToolRecord {
+  toolUseId: string
+  toolName: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  inputPreview?: string
+  outputPreview?: string
+}
+
+export type RuntimeTimelineBlock =
+  | {
+      kind: 'assistant'
+      id: string
+      text: string
+      step?: number
+    }
+  | {
+      kind: 'tool'
+      id: string
+      record: RuntimeTimelineToolRecord
+      step?: number
+    }
+
 export interface SessionSandboxConfig {
   workspaceRoot?: string
   readRoots?: string[]

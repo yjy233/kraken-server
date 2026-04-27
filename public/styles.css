@@ -539,6 +539,19 @@ body {
   padding: 16px 18px;
 }
 
+.runtime-reply-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.runtime-reply-text + .runtime-reply-tool,
+.runtime-reply-tool + .runtime-reply-text,
+.runtime-reply-tool + .runtime-reply-tool,
+.runtime-reply-text + .runtime-reply-text {
+  margin-top: 0;
+}
+
 /* traces 放在普通 assistant 消息或 agent-reply 内部 */
 .message .agent-traces,
 .agent-reply .agent-traces {

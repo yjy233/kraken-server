@@ -8,6 +8,7 @@ interface ChatState {
   error: string | null
   runtimeEvents: RuntimeEvent[]
   streamingText: string
+  traceSessionId: string | null
 }
 
 export function useChat(
@@ -20,6 +21,7 @@ export function useChat(
     error: null,
     runtimeEvents: [],
     streamingText: '',
+    traceSessionId: null,
   })
 
   const abortRef = useRef<(() => void) | null>(null)
@@ -57,7 +59,12 @@ export function useChat(
         void (async () => {
           onSessionUpdate(message.payload.session)
           await onSessionsRefresh()
-          setState((prev) => ({ ...prev, sending: false, streamingText: '' }))
+          setState((prev) => ({
+            ...prev,
+            sending: false,
+            streamingText: '',
+            traceSessionId: message.payload.session.id,
+          }))
           requestIdRef.current = null
         })()
       }
@@ -72,7 +79,13 @@ export function useChat(
     async (message: string, systemPrompt: string, sandbox?: SessionSandboxConfig) => {
       if (!message.trim()) return
 
-      setState({ sending: true, error: null, runtimeEvents: [], streamingText: '' })
+      setState({
+        sending: true,
+        error: null,
+        runtimeEvents: [],
+        streamingText: '',
+        traceSessionId: activeSession?.id || 'pending',
+      })
 
       // 乐观插入用户消息到当前会话
       const optimisticUserMsg: SessionMessage = {

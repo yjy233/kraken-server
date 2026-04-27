@@ -7,6 +7,7 @@
 import { generateText, jsonSchema, type Tool, type ModelMessage, type TextPart, type ToolCallPart, type ToolResultPart } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import type { AgentMessage, AgentContentBlock, ToolDefinition, ModelResponse, ToolResultBlock, ToolUseBlock } from './types.js'
+import { appendModelLog } from '../logging/file-logger.js'
 
 const OPENROUTER_BASE_URL = normalizeBaseUrl(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1')
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''
@@ -118,6 +119,14 @@ function convertMessages(messages: AgentMessage[]): ModelMessage[] {
   return result
 }
 
+function summarizeTools(tools: ToolDefinition[]) {
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.input_schema,
+  }))
+}
+
 /**
  * 调用大语言模型。
  * @returns 解析后的 ModelResponse，包含文本、工具请求、用量等。
@@ -137,6 +146,8 @@ export async function invokeModel({
   maxOutputTokens: number
   timeout?: number
 }): Promise<ModelResponse> {
+  const requestId = crypto.randomUUID()
+  const startedAt = Date.now()
   const languageModel = resolveLanguageModel(model)
   const aiTools = convertTools(tools)
   const aiMessages = convertMessages(messages)
@@ -152,25 +163,67 @@ export async function invokeModel({
     generateOptions.timeout = timeout
   }
 
-  const result = await generateText(generateOptions)
+  await appendModelLog({
+    kind: 'request',
+    timestamp: new Date(startedAt).toISOString(),
+    requestId,
+    model,
+    payload: {
+      systemPrompt,
+      messages: aiMessages,
+      tools: summarizeTools(tools),
+      maxOutputTokens,
+      timeout: timeout ?? null,
+    },
+  })
 
-  const toolUses = result.toolCalls.map((tc) => ({
-    id: tc.toolCallId,
-    name: tc.toolName,
-    input: tc.input as Record<string, unknown>,
-  }))
+  try {
+    const result = await generateText(generateOptions)
 
-  const usage: Record<string, unknown> = {
-    input_tokens: result.usage.inputTokens ?? 0,
-    output_tokens: result.usage.outputTokens ?? 0,
-    total_tokens: result.usage.totalTokens ?? 0,
-  }
+    const toolUses = result.toolCalls.map((tc) => ({
+      id: tc.toolCallId,
+      name: tc.toolName,
+      input: tc.input as Record<string, unknown>,
+    }))
 
-  return {
-    text: result.text,
-    toolUses,
-    usage,
-    stopReason: result.finishReason,
-    raw: result.response,
+    const usage: Record<string, unknown> = {
+      input_tokens: result.usage.inputTokens ?? 0,
+      output_tokens: result.usage.outputTokens ?? 0,
+      total_tokens: result.usage.totalTokens ?? 0,
+    }
+
+    await appendModelLog({
+      kind: 'response',
+      timestamp: new Date().toISOString(),
+      requestId,
+      model,
+      durationMs: Date.now() - startedAt,
+      payload: {
+        text: result.text,
+        toolUses,
+        usage,
+        stopReason: result.finishReason,
+        raw: result.response,
+      },
+    })
+
+    return {
+      text: result.text,
+      toolUses,
+      usage,
+      stopReason: result.finishReason,
+      raw: result.response,
+    }
+  } catch (error) {
+    await appendModelLog({
+      kind: 'error',
+      timestamp: new Date().toISOString(),
+      requestId,
+      model,
+      durationMs: Date.now() - startedAt,
+      payload: error,
+    })
+
+    throw error
   }
 }

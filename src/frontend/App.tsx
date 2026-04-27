@@ -245,6 +245,7 @@ export default function App() {
               runtimeEvents={chat.runtimeEvents}
               streamingText={chat.streamingText}
               sending={chat.sending}
+              traceSessionId={chat.traceSessionId}
             />
 
             <Composer sending={chat.sending} onSend={handleSend} onCancel={chat.cancel} />
