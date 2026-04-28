@@ -7,8 +7,6 @@ interface ChatState {
   sending: boolean
   error: string | null
   runtimeEvents: RuntimeEvent[]
-  streamingText: string
-  traceSessionId: string | null
 }
 
 export function useChat(
@@ -21,8 +19,6 @@ export function useChat(
     sending: false,
     error: null,
     runtimeEvents: [],
-    streamingText: '',
-    traceSessionId: null,
   })
 
   const abortRef = useRef<(() => void) | null>(null)
@@ -37,7 +33,7 @@ export function useChat(
       }
 
       if (message.type === 'request:error' && message.requestId === requestId) {
-        setState((prev) => ({ ...prev, sending: false, error: message.error, streamingText: '' }))
+        setState((prev) => ({ ...prev, sending: false, error: message.error }))
         requestIdRef.current = null
         return
       }
@@ -47,9 +43,6 @@ export function useChat(
           const next: ChatState = {
             ...prev,
             runtimeEvents: [...prev.runtimeEvents, { event: message.event, data: message.data, at: new Date().toISOString() }].slice(-80),
-          }
-          if (message.event === 'assistant:delta') {
-            next.streamingText = ((message.data as { text?: string }).text) || ''
           }
           if (message.event === 'context:state') {
             const data = message.data as { sessionId?: string; contextWindow?: ContextWindowState }
@@ -69,8 +62,6 @@ export function useChat(
           setState((prev) => ({
             ...prev,
             sending: false,
-            streamingText: '',
-            traceSessionId: message.payload.session.id,
           }))
           requestIdRef.current = null
         })()
@@ -90,8 +81,6 @@ export function useChat(
         sending: true,
         error: null,
         runtimeEvents: [],
-        streamingText: '',
-        traceSessionId: activeSession?.id || 'pending',
       })
 
       // 乐观插入用户消息到当前会话
@@ -150,7 +139,7 @@ export function useChat(
   const cancel = useCallback(() => {
     abortRef.current?.()
     abortRef.current = null
-    setState((prev) => ({ ...prev, sending: false, streamingText: '' }))
+    setState((prev) => ({ ...prev, sending: false }))
   }, [])
 
   const clearError = useCallback(() => {
