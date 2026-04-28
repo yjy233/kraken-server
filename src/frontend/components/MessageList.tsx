@@ -8,6 +8,18 @@ interface MessageListProps {
   sending: boolean
 }
 
+type DisplayBubble = {
+  id: string
+  role: SessionMessage['role']
+  createdAt: string
+  blocks: DisplayBlock[]
+}
+
+type DisplayBlock = {
+  block: AgentContentBlock
+  role: SessionMessage['role']
+}
+
 function buildInputPreview(toolName: string, input: Record<string, unknown>): string {
   switch (toolName) {
     case 'shell_command':
@@ -162,7 +174,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   const messages = session?.messages || []
   const listRef = useRef<HTMLDivElement>(null)
   const runtimeBlocks = buildRuntimeBlocks(runtimeEvents)
-  const persistedMessages = messages
+  const persistedBubbles = buildDisplayBubbles(messages)
 
   useEffect(() => {
     if (listRef.current) {
@@ -174,15 +186,15 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   return (
     <section ref={listRef} className="message-list" aria-live="polite">
-      {persistedMessages.length === 0 && !showRuntimeBubble ? (
+      {persistedBubbles.length === 0 && !showRuntimeBubble ? (
         <div className="hero-empty">
           <h3>What can I help you with?</h3>
           <p>Ask me to inspect code, search files, run commands, or help with any task.</p>
         </div>
       ) : (
         <>
-          {persistedMessages.map((msg, idx) => (
-            <MessageItem key={msg.id || idx} message={msg} />
+          {persistedBubbles.map((bubble) => (
+            <MessageBubble key={bubble.id} bubble={bubble} />
           ))}
 
           {showRuntimeBubble && (
@@ -197,27 +209,65 @@ export const MessageList: React.FC<MessageListProps> = ({
   )
 }
 
-const MessageItem: React.FC<{ message: SessionMessage }> = ({ message }) => {
-  const displayRole = isToolResultMessage(message) ? 'assistant' : message.role
-  const timestamp = formatMessageTimestamp(message.createdAt)
-  const contentBlocks = normalizeMessageBlocks(message.content)
+function buildDisplayBubbles(messages: SessionMessage[]): DisplayBubble[] {
+  const bubbles: DisplayBubble[] = []
+  let currentAssistantBubble: DisplayBubble | null = null
+
+  for (const message of messages) {
+    const blocks = normalizeMessageBlocks(message.content).map((block): DisplayBlock => ({
+      block,
+      role: message.role,
+    }))
+    if (blocks.length === 0) {
+      continue
+    }
+
+    if (message.role === 'user' && !isToolResultMessage(message)) {
+      bubbles.push({
+        id: message.id,
+        role: 'user',
+        createdAt: message.createdAt,
+        blocks,
+      })
+      currentAssistantBubble = null
+      continue
+    }
+
+    if (!currentAssistantBubble) {
+      currentAssistantBubble = {
+        id: `assistant-group-${message.id}`,
+        role: 'assistant',
+        createdAt: message.createdAt,
+        blocks: [],
+      }
+      bubbles.push(currentAssistantBubble)
+    }
+
+    currentAssistantBubble.blocks.push(...blocks)
+  }
+
+  return bubbles
+}
+
+const MessageBubble: React.FC<{ bubble: DisplayBubble }> = ({ bubble }) => {
+  const timestamp = formatMessageTimestamp(bubble.createdAt)
 
   return (
-    <div className="message-row" data-role={displayRole}>
-      {displayRole === 'assistant' && (
+    <div className="message-row" data-role={bubble.role}>
+      {bubble.role === 'assistant' && (
         <img src="/logo.png" className="agent-avatar" alt="Kraken" />
       )}
-      <div className="message-stack" data-role={displayRole}>
+      <div className="message-stack" data-role={bubble.role}>
         <div className="message-timestamp" aria-label={`Sent at ${timestamp}`}>
           {timestamp}
         </div>
-        <article className="message" data-role={displayRole}>
+        <article className="message" data-role={bubble.role}>
           <div className="message-block-flow">
-            {contentBlocks.map((block, index) => (
+            {bubble.blocks.map(({ block, role }, index) => (
               <MessageContentBlock
                 key={`${block.type}-${index}`}
                 block={block}
-                role={message.role}
+                role={role}
               />
             ))}
           </div>
