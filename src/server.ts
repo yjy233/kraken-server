@@ -53,6 +53,11 @@ const MAX_AGENT_STEPS = parseInteger(process.env.MAX_AGENT_STEPS, 8)
 const REQUEST_TIMEOUT_MS = parseInteger(process.env.REQUEST_TIMEOUT_MS, 120000)
 const ALLOW_SHELL_TOOL = parseBoolean(process.env.ALLOW_SHELL_TOOL, true)
 const ALLOW_FILE_WRITE_TOOL = parseBoolean(process.env.ALLOW_FILE_WRITE_TOOL, false)
+const ALLOW_AGENT_BROWSER = parseBoolean(process.env.ALLOW_AGENT_BROWSER, false)
+const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN || 'agent-browser'
+const AGENT_BROWSER_MAX_OUTPUT = parseInteger(process.env.AGENT_BROWSER_MAX_OUTPUT, 50000)
+const AGENT_BROWSER_DEFAULT_TIMEOUT = parseInteger(process.env.AGENT_BROWSER_DEFAULT_TIMEOUT, 25000)
+const AGENT_BROWSER_ALLOWED_DOMAINS = normalizeAgentBrowserAllowedDomains(process.env.AGENT_BROWSER_ALLOWED_DOMAINS)
 const ENABLE_PATH_SANDBOX = parseBoolean(process.env.ENABLE_PATH_SANDBOX, true)
 const ENABLE_SEATBELT = parseBoolean(process.env.ENABLE_SEATBELT, true)
 const DEFAULT_WORKSPACE_ROOT = path.resolve(expandHomePath(process.env.DEFAULT_WORKSPACE_ROOT || path.join(os.homedir(), 'kraken')))
@@ -71,6 +76,11 @@ const TOOL_REGISTRY_OPTIONS: CreateRegistryOptions = {
   rootDir: ROOT_DIR,
   allowShellTool: ALLOW_SHELL_TOOL,
   allowFileWriteTool: ALLOW_FILE_WRITE_TOOL,
+  allowAgentBrowserTool: ALLOW_AGENT_BROWSER,
+  agentBrowserBin: AGENT_BROWSER_BIN,
+  agentBrowserMaxOutput: AGENT_BROWSER_MAX_OUTPUT,
+  agentBrowserDefaultTimeout: AGENT_BROWSER_DEFAULT_TIMEOUT,
+  agentBrowserAllowedDomains: AGENT_BROWSER_ALLOWED_DOMAINS,
   enablePathSandbox: ENABLE_PATH_SANDBOX,
   enableSeatbelt: ENABLE_SEATBELT,
   defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
@@ -498,6 +508,14 @@ void schedulerService.start()
 
 function normalizeSystemPrompt(systemPrompt: string | undefined): string {
   return agentService.normalizeSystemPrompt(systemPrompt)
+}
+
+function normalizeAgentBrowserAllowedDomains(value: string | undefined): string | undefined {
+  const normalized = String(value || '').trim()
+  if (!normalized || normalized === '*') {
+    return undefined
+  }
+  return normalized
 }
 
 function buildScheduledJobInput(body: unknown): Omit<ScheduledJob, 'id' | 'createdAt' | 'updatedAt'> {

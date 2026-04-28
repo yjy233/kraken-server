@@ -32,6 +32,8 @@ function buildInputPreview(toolName: string, input: Record<string, unknown>): st
       return `${input.pattern || ''}`
     case 'project_overview':
       return `depth=${input.max_depth || 2}`
+    case 'agent_browser':
+      return `${input.action || ''} ${input.url || input.ref || input.selector || input.text || ''}`.trim()
     default:
       return ''
   }

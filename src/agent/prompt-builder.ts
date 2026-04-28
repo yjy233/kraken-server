@@ -96,7 +96,8 @@ export class PromptBuilder {
   private buildWebToolsGuidelines(): string | null {
     const hasWebFetch = this.hasTool('web_fetch')
     const hasSearch = this.hasTool('search')
-    if (!hasWebFetch && !hasSearch) return null
+    const hasAgentBrowser = this.hasTool('agent_browser')
+    if (!hasWebFetch && !hasSearch && !hasAgentBrowser) return null
 
     const lines = ['## Web Tools Guidelines']
     if (hasSearch) {
@@ -104,6 +105,11 @@ export class PromptBuilder {
     }
     if (hasWebFetch) {
       lines.push('- Use `web_fetch` when you need to read a specific webpage in detail.')
+    }
+    if (hasAgentBrowser) {
+      lines.push('- Use `agent_browser` for real browser automation, dynamic pages, forms, screenshots, and frontend verification.')
+      lines.push('- Agent browser workflow: open a URL, take a snapshot, use refs like @e1 for click/fill/type, wait after navigation, then snapshot again.')
+      lines.push('- Prefer `web_fetch` for static page text; prefer `agent_browser` when interaction or rendered UI state matters.')
     }
     lines.push('- Prefer local tools (read_file, grep) over web tools when the information is already in the project.')
     return lines.join('\n')

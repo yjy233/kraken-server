@@ -13,6 +13,7 @@ import { globTool } from './glob.js'
 import { writeFileTool } from './write-file.js'
 import { shellCommandTool } from './shell-command.js'
 import { webFetchTool } from './web-fetch.js'
+import { agentBrowserTool } from './agent-browser.js'
 import { todoTool } from './todo.js'
 import { searchTool } from './search.js'
 import { replaceTool } from './replace.js'
@@ -27,6 +28,11 @@ export interface CreateRegistryOptions {
   rootDir: string
   allowShellTool: boolean
   allowFileWriteTool: boolean
+  allowAgentBrowserTool: boolean
+  agentBrowserBin: string
+  agentBrowserMaxOutput: number
+  agentBrowserDefaultTimeout: number
+  agentBrowserAllowedDomains?: string | undefined
   enablePathSandbox: boolean
   enableSeatbelt: boolean
   defaultWorkspaceRoot: string
@@ -53,6 +59,7 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     writeFileTool,
     shellCommandTool,
     webFetchTool,
+    agentBrowserTool,
     todoTool,
     searchTool,
     replaceTool,
@@ -79,6 +86,11 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     rootDir: options.rootDir,
     allowShellTool: options.allowShellTool,
     allowFileWriteTool: options.allowFileWriteTool,
+    allowAgentBrowserTool: options.allowAgentBrowserTool,
+    agentBrowserBin: options.agentBrowserBin,
+    agentBrowserMaxOutput: options.agentBrowserMaxOutput,
+    agentBrowserDefaultTimeout: options.agentBrowserDefaultTimeout,
+    agentBrowserAllowedDomains: options.agentBrowserAllowedDomains,
     enablePathSandbox: options.enablePathSandbox,
     enableSeatbelt: options.enableSeatbelt,
     sessionId,
