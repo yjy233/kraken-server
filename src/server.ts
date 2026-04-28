@@ -38,6 +38,7 @@ const PORT = parseInteger(process.env.PORT, 3011)
 const APP_TITLE = process.env.APP_TITLE || 'Kraken Agent'
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || process.env.DEFAULT_MODEL || 'anthropic/claude-sonnet-4'
 const MAX_TOKENS = parseInteger(process.env.MAX_TOKENS, 2048)
+const MAX_CONTEXT_TOKENS = parseInteger(process.env.MAX_CONTEXT_TOKENS, 32000)
 const BASE_SYSTEM_PROMPT = `You are Kraken Agent, an all-purpose AI assistant.
 
 Before answering, think step by step:
@@ -90,6 +91,7 @@ const agentService = createAgentService({
   baseSystemPrompt: BASE_SYSTEM_PROMPT,
   maxSteps: MAX_AGENT_STEPS,
   maxTokens: MAX_TOKENS,
+  maxContextTokens: MAX_CONTEXT_TOKENS,
   timeout: REQUEST_TIMEOUT_MS,
   maxContextMessages: MAX_CONTEXT_MESSAGES,
   defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
@@ -160,6 +162,7 @@ app.get('/api/config', (_req, res) => {
     model: DEFAULT_MODEL,
     defaultSystemPrompt: normalizeSystemPrompt(undefined),
     maxAgentSteps: MAX_AGENT_STEPS,
+    maxContextTokens: MAX_CONTEXT_TOKENS,
     defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
     sandboxEnabled: ENABLE_PATH_SANDBOX,
     seatbeltEnabled: ENABLE_SEATBELT,

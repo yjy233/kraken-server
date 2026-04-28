@@ -17,12 +17,14 @@ import {
   sanitizeTitle,
 } from '../utils/helpers.js'
 import type { SessionMessageRecord, SessionRecord } from './session-store.js'
+import { prepareContextWindow, type ContextCompressionConfig } from './context-window.js'
 
 export interface AgentServiceConfig {
   defaultModel: string
   baseSystemPrompt: string
   maxSteps: number
   maxTokens: number
+  maxContextTokens: number
   timeout: number
   maxContextMessages: number
   defaultWorkspaceRoot: string
@@ -90,6 +92,16 @@ export function createAgentService(config: AgentServiceConfig) {
       '',
       buildSandboxPromptContext(sandboxPolicy),
     ].join('\n')
+  }
+
+  function buildContextCompressionConfig(): ContextCompressionConfig {
+    return {
+      maxTokens: config.maxContextTokens,
+      softThresholdRatio: 0.5,
+      hardThresholdRatio: 0.8,
+      partialKeepRecentTurns: 5,
+      fullKeepRecentTurns: 1,
+    }
   }
 
   async function runRequest(body: unknown, emit: EmitFn | null): Promise<RunAgentServiceResult> {
@@ -211,12 +223,28 @@ export function createAgentService(config: AgentServiceConfig) {
       state: 'started',
     })
 
-    const agentMessages = buildAgentMessages(session.messages, config.maxContextMessages)
+    const runtimeSystemPrompt = buildRuntimeSystemPrompt(session.systemPrompt, toolRegistry, sandboxPolicy)
+    const contextPreparation = prepareContextWindow({
+      messages: session.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+      systemPrompt: runtimeSystemPrompt,
+      tools: toolRegistry,
+      config: buildContextCompressionConfig(),
+    })
+    const agentMessages = contextPreparation.messages
+    session.contextWindow = contextPreparation.state
+
+    emit?.('context:state', {
+      sessionId: session.id,
+      contextWindow: contextPreparation.state,
+    })
 
     const result = await agent.run({
       messages: agentMessages,
       model: session.model,
-      systemPrompt: buildRuntimeSystemPrompt(session.systemPrompt, toolRegistry, sandboxPolicy),
+      systemPrompt: runtimeSystemPrompt,
       tools: toolRegistry,
       skillState,
       emit: emit ?? undefined,
@@ -236,6 +264,7 @@ export function createAgentService(config: AgentServiceConfig) {
 
     const run = result.run
     run.sessionId = session.id
+    run.contextWindow = contextPreparation.state
 
     await config.sessionStore.saveSession(session)
     emit?.('session', {

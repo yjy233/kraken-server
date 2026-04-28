@@ -397,6 +397,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .model-pill {
@@ -718,6 +719,57 @@ body {
   color: var(--danger);
   font-size: 14px;
   font-weight: 500;
+}
+
+.context-meter {
+  min-width: 0;
+  flex: 0 1 260px;
+}
+
+.context-meter-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.context-meter-label,
+.context-meter-value {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.context-meter-label {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.context-meter-track {
+  flex: 1 1 auto;
+  min-width: 84px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e7ecf2;
+  overflow: hidden;
+}
+
+.context-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #3fb950;
+}
+
+.context-meter-fill[data-tone="warn"] {
+  background: #f59e0b;
+}
+
+.context-meter-fill[data-tone="danger"] {
+  background: #ef4444;
+}
+
+.context-meter-value {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
 }
 
 /* ─── Scheduled Jobs ─────────────────────────────── */
@@ -1388,6 +1440,10 @@ body {
   .header-meta {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .context-meter {
+    flex: 1 1 100%;
   }
 
   .sandbox-field,

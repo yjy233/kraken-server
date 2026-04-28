@@ -8,6 +8,7 @@ export interface Config {
   model: string
   defaultSystemPrompt: string
   maxAgentSteps: number
+  maxContextTokens: number
   defaultWorkspaceRoot: string
   sandboxEnabled: boolean
   seatbeltEnabled: boolean
@@ -57,6 +58,7 @@ export interface Session {
   systemPrompt: string
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
+  contextWindow?: ContextWindowState | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessage[]
@@ -68,11 +70,28 @@ export interface SessionSummary {
   model: string
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
+  contextWindow?: ContextWindowState | undefined
   createdAt: string
   updatedAt: string
   messageCount: number
   preview: string
   lastRole: string | null
+}
+
+export interface ContextWindowState {
+  maxTokens: number
+  rawTokens: number
+  effectiveTokens: number
+  rawUsageRatio: number
+  effectiveUsageRatio: number
+  rawUsagePercent: number
+  effectiveUsagePercent: number
+  compressionMode: 'none' | 'partial' | 'full'
+  recentTurnsKept: number
+  summarizedMessages: number
+  originalMessageCount: number
+  effectiveMessageCount: number
+  summaryTokens: number
 }
 
 export interface SessionMessage {
@@ -134,6 +153,7 @@ export interface RunResult {
     isError: boolean
     output: string
   }>
+  contextWindow?: ContextWindowState
 }
 
 export interface StreamCompleteData {

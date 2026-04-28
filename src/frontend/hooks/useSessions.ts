@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { Session, SessionSandboxConfig, SessionSummary } from '../types.js'
+import type { Session, SessionSandboxConfig, SessionSummary, ContextWindowState } from '../types.js'
 import { fetchSessions, createSession, fetchSession, updateSession, deleteSession as apiDeleteSession, deleteAllSessions as apiDeleteAllSessions } from '../api.js'
 
 export function useSessions() {
@@ -59,6 +59,10 @@ export function useSessions() {
     setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, loadedSkills } : prev))
   }, [])
 
+  const setContextWindow = useCallback((sessionId: string, contextWindow: ContextWindowState) => {
+    setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, contextWindow } : prev))
+  }, [])
+
   return {
     sessions,
     activeSession,
@@ -74,5 +78,6 @@ export function useSessions() {
     setSystemPrompt,
     setSandbox,
     setLoadedSkills,
+    setContextWindow,
   }
 }

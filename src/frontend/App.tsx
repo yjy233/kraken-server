@@ -4,6 +4,7 @@ import { MessageList } from './components/MessageList.js'
 import { Composer } from './components/Composer.js'
 import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
 import { WorkspacePanel } from './components/WorkspacePanel.js'
+import { ContextWindowMeter } from './components/ContextWindowMeter.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
 import { useChat } from './hooks/useChat.js'
@@ -52,7 +53,12 @@ export default function App() {
     [sessions]
   )
 
-  const chat = useChat(sessions.activeSession, handleSessionUpdate, sessions.refresh)
+  const chat = useChat(
+    sessions.activeSession,
+    handleSessionUpdate,
+    sessions.refresh,
+    sessions.setContextWindow
+  )
   const scheduled = useScheduledJobs(activeTab === 'scheduled')
 
   useEffect(() => {
@@ -227,6 +233,7 @@ export default function App() {
                   : 'No session'}
               </span>
               <span className="model-pill">{config?.model || 'Model'}</span>
+              <ContextWindowMeter contextWindow={sessions.activeSession?.contextWindow} compact />
               <button className="ghost-button" type="button" onClick={handleNewChat}>
                 New chat
               </button>

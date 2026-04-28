@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { Session, SessionMessage, RuntimeEvent, SessionSandboxConfig } from '../types.js'
+import type { Session, SessionMessage, RuntimeEvent, SessionSandboxConfig, ContextWindowState } from '../types.js'
 import { wsClient } from '../ws-client.js'
 import type { WsServerMessage } from '../../ws/protocol.js'
 
@@ -14,7 +14,8 @@ interface ChatState {
 export function useChat(
   activeSession: Session | null,
   onSessionUpdate: (session: Session) => void,
-  onSessionsRefresh: () => Promise<unknown>
+  onSessionsRefresh: () => Promise<unknown>,
+  onContextWindowUpdate?: (sessionId: string, contextWindow: ContextWindowState) => void
 ) {
   const [state, setState] = useState<ChatState>({
     sending: false,
@@ -50,6 +51,12 @@ export function useChat(
           if (message.event === 'assistant:delta') {
             next.streamingText = ((message.data as { text?: string }).text) || ''
           }
+          if (message.event === 'context:state') {
+            const data = message.data as { sessionId?: string; contextWindow?: ContextWindowState }
+            if (data.sessionId && data.contextWindow) {
+              onContextWindowUpdate?.(data.sessionId, data.contextWindow)
+            }
+          }
           return next
         })
         return
@@ -73,7 +80,7 @@ export function useChat(
     return () => {
       unsubscribe()
     }
-  }, [onSessionUpdate, onSessionsRefresh])
+  }, [onSessionUpdate, onSessionsRefresh, onContextWindowUpdate])
 
   const send = useCallback(
     async (message: string, systemPrompt: string, sandbox?: SessionSandboxConfig) => {

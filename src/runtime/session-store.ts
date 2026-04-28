@@ -9,6 +9,7 @@ import {
   sanitizeTitle,
   truncate,
 } from '../utils/helpers.js'
+import type { ContextWindowState } from '../agent/types.js'
 
 export interface SessionMessageRecord {
   id: string
@@ -24,6 +25,7 @@ export interface SessionRecord {
   systemPrompt: string
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
+  contextWindow?: ContextWindowState | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessageRecord[]
@@ -35,6 +37,7 @@ export interface SessionSummaryRecord {
   model: string
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
+  contextWindow?: ContextWindowState | undefined
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -80,6 +83,7 @@ export function createSessionStore(params: {
       model: session.model,
       sandbox: session.sandbox,
       loadedSkills: session.loadedSkills || [],
+      contextWindow: session.contextWindow,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
       messageCount: session.messages.length,

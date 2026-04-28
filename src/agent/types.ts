@@ -15,6 +15,22 @@ export type JsonRecord = Record<string, unknown>
 /** 模型用量统计 */
 export type ModelUsage = JsonRecord | null
 
+export interface ContextWindowState {
+  maxTokens: number
+  rawTokens: number
+  effectiveTokens: number
+  rawUsageRatio: number
+  effectiveUsageRatio: number
+  rawUsagePercent: number
+  effectiveUsagePercent: number
+  compressionMode: 'none' | 'partial' | 'full'
+  recentTurnsKept: number
+  summarizedMessages: number
+  originalMessageCount: number
+  effectiveMessageCount: number
+  summaryTokens: number
+}
+
 /** 事件发射函数，用于 SSE 流式推送运行时事件 */
 export type EmitFn = (event: string, data: unknown) => void
 
@@ -96,6 +112,7 @@ export interface RunResult {
   finalText: string
   usage: ModelUsage[]
   toolExecutions: ToolExecution[]
+  contextWindow?: ContextWindowState
 }
 
 /** 模型原始响应结构 */
