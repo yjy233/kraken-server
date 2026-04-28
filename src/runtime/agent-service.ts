@@ -224,11 +224,12 @@ export function createAgentService(config: AgentServiceConfig) {
     })
 
     const runtimeSystemPrompt = buildRuntimeSystemPrompt(session.systemPrompt, toolRegistry, sandboxPolicy)
+    const contextMessages = session.messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }))
     const contextPreparation = prepareContextWindow({
-      messages: session.messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
+      messages: contextMessages,
       systemPrompt: runtimeSystemPrompt,
       tools: toolRegistry,
       config: buildContextCompressionConfig(),
@@ -252,14 +253,13 @@ export function createAgentService(config: AgentServiceConfig) {
 
     session.loadedSkills = result.loadedSkills || []
 
-    const finalText = result.reply
-    const assistantMessage: SessionMessageRecord = {
+    const newMessages = result.finalMessages.slice(agentMessages.length)
+    session.messages.push(...newMessages.map((message): SessionMessageRecord => ({
       id: crypto.randomUUID(),
-      role: 'assistant',
-      content: finalText,
+      role: message.role,
+      content: message.content,
       createdAt: new Date().toISOString(),
-    }
-    session.messages.push(assistantMessage)
+    })))
     session.updatedAt = new Date().toISOString()
 
     const run = result.run
@@ -273,7 +273,7 @@ export function createAgentService(config: AgentServiceConfig) {
     })
 
     return {
-      reply: finalText,
+      reply: result.reply,
       session,
       run,
     }

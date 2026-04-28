@@ -9,12 +9,14 @@ import {
   sanitizeTitle,
   truncate,
 } from '../utils/helpers.js'
-import type { ContextWindowState } from '../agent/types.js'
+import type { AgentContentBlock, ContextWindowState } from '../agent/types.js'
+
+export type SessionMessageContent = string | AgentContentBlock[]
 
 export interface SessionMessageRecord {
   id: string
   role: 'user' | 'assistant'
-  content: string
+  content: SessionMessageContent
   createdAt: string
 }
 
@@ -87,7 +89,7 @@ export function createSessionStore(params: {
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
       messageCount: session.messages.length,
-      preview: lastMessage ? truncate(collapseWhitespace(lastMessage.content), 100) : '',
+      preview: lastMessage ? truncate(collapseWhitespace(messageContentPreview(lastMessage.content)), 100) : '',
       lastRole: lastMessage?.role ?? null,
     }
   }
@@ -158,7 +160,9 @@ export function createSessionStore(params: {
     session.loadedSkills = Array.isArray(session.loadedSkills)
       ? session.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
       : []
-    session.messages = Array.isArray(session.messages) ? session.messages : []
+    session.messages = Array.isArray(session.messages)
+      ? session.messages.map(normalizeMessageRecord).filter((message): message is SessionMessageRecord => Boolean(message))
+      : []
     return session
   }
 
@@ -172,4 +176,96 @@ export function createSessionStore(params: {
     deleteAllSessions,
     sessionFilePath,
   }
+}
+
+function normalizeMessageRecord(value: unknown): SessionMessageRecord | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const record = value as Partial<SessionMessageRecord>
+  const role = record.role === 'assistant' ? 'assistant' : record.role === 'user' ? 'user' : null
+  if (!role) {
+    return null
+  }
+  const content = normalizeMessageContent(record.content)
+  if (content === null) {
+    return null
+  }
+  return {
+    id: typeof record.id === 'string' && record.id ? record.id : crypto.randomUUID(),
+    role,
+    content,
+    createdAt: typeof record.createdAt === 'string' && record.createdAt
+      ? record.createdAt
+      : new Date().toISOString(),
+  }
+}
+
+function normalizeMessageContent(value: unknown): SessionMessageContent | null {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const blocks: AgentContentBlock[] = []
+  for (const block of value) {
+    if (!block || typeof block !== 'object') {
+      continue
+    }
+    const record = block as Record<string, unknown>
+    if (record.type === 'text' && typeof record.text === 'string') {
+      blocks.push({ type: 'text', text: record.text })
+      continue
+    }
+    if (
+      record.type === 'tool_use' &&
+      typeof record.id === 'string' &&
+      typeof record.name === 'string' &&
+      record.input &&
+      typeof record.input === 'object' &&
+      !Array.isArray(record.input)
+    ) {
+      blocks.push({
+        type: 'tool_use',
+        id: record.id,
+        name: record.name,
+        input: record.input as Record<string, unknown>,
+      })
+      continue
+    }
+    if (
+      record.type === 'tool_result' &&
+      typeof record.tool_use_id === 'string' &&
+      typeof record.content === 'string'
+    ) {
+      const resultBlock: AgentContentBlock = {
+        type: 'tool_result',
+        tool_use_id: record.tool_use_id,
+        content: record.content,
+        is_error: Boolean(record.is_error),
+      }
+      if (typeof record.tool_name === 'string') {
+        resultBlock.tool_name = record.tool_name
+      }
+      blocks.push(resultBlock)
+    }
+  }
+  return blocks
+}
+
+function messageContentPreview(content: SessionMessageContent): string {
+  if (typeof content === 'string') {
+    return content
+  }
+  return content.map((block) => {
+    if (block.type === 'text') {
+      return block.text
+    }
+    if (block.type === 'tool_use') {
+      return `Tool call ${block.name}: ${JSON.stringify(block.input)}`
+    }
+    const label = block.tool_name || block.tool_use_id
+    return `Tool result ${label}: ${block.content}`
+  }).join('\n')
 }

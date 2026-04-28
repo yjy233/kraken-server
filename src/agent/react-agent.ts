@@ -89,6 +89,7 @@ export class ReActAgent {
     const exhaustedMessage = `Agent stopped after reaching the maximum step limit (${this.config.maxSteps}).`
     run.finalText = exhaustedMessage
     const loadedSkills = Array.from(params.skillState?.loadedSkillNames || [])
+    currentMessages.push({ role: 'assistant', content: exhaustedMessage })
     return { reply: exhaustedMessage, run, finalMessages: currentMessages, loadedSkills }
   }
 }

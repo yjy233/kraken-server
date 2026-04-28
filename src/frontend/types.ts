@@ -97,8 +97,32 @@ export interface ContextWindowState {
 export interface SessionMessage {
   id: string
   role: 'user' | 'assistant'
-  content: string
+  content: SessionMessageContent
   createdAt: string
+}
+
+export type SessionMessageContent = string | AgentContentBlock[]
+
+export type AgentContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+
+export interface TextBlock {
+  type: 'text'
+  text: string
+}
+
+export interface ToolUseBlock {
+  type: 'tool_use'
+  id: string
+  name: string
+  input: Record<string, unknown>
+}
+
+export interface ToolResultBlock {
+  type: 'tool_result'
+  tool_use_id: string
+  tool_name?: string
+  content: string
+  is_error: boolean
 }
 
 export interface RuntimeEvent {
@@ -112,7 +136,9 @@ export interface RuntimeTimelineToolRecord {
   toolName: string
   status: 'pending' | 'running' | 'done' | 'error'
   inputPreview?: string
+  input?: Record<string, unknown>
   outputPreview?: string
+  output?: string
 }
 
 export type RuntimeTimelineBlock =

@@ -1,13 +1,11 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { marked } from 'marked'
-import type { Session, SessionMessage, RuntimeEvent, RuntimeTimelineBlock, RuntimeTimelineToolRecord } from '../types.js'
+import type { AgentContentBlock, Session, SessionMessage, RuntimeEvent, RuntimeTimelineBlock, RuntimeTimelineToolRecord } from '../types.js'
 
 interface MessageListProps {
   session: Session | null
   runtimeEvents: RuntimeEvent[]
-  streamingText: string
   sending: boolean
-  traceSessionId?: string | null
 }
 
 function buildInputPreview(toolName: string, input: Record<string, unknown>): string {
@@ -68,6 +66,7 @@ function buildRuntimeBlocks(events: RuntimeEvent[]): RuntimeTimelineBlock[] {
         toolName: data.toolUse.name,
         status: 'pending',
         inputPreview: buildInputPreview(data.toolUse.name, data.toolUse.input),
+        input: data.toolUse.input,
       }
       toolMap.set(data.toolUse.id, record)
       const block: RuntimeTimelineBlock = {
@@ -95,6 +94,7 @@ function buildRuntimeBlocks(events: RuntimeEvent[]): RuntimeTimelineBlock[] {
       if (record) {
         record.status = data.isError ? 'error' : 'done'
         record.outputPreview = data.outputPreview
+        record.output = typeof data.output === 'string' ? data.output : data.outputPreview
       }
     }
   }
@@ -107,14 +107,10 @@ function renderMarkdown(text: string): { __html: string } {
   return { __html: html }
 }
 
-function cleanToolOutput(text: string): string {
-  let t = text.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
-  t = t.replace(/\[\d+(;\d+)*m/g, '')
-  t = t.replace(/(?:_\s*-\s*){2,}/g, ' ')
-  t = t.replace(/[┌┐└┘│─┬┼┤├┴┬╔╗╚╝║═╦╩╠╣]/g, ' ')
-  t = t.replace(/[▀▄█▌▐░▒▓]/g, ' ')
-  t = t.replace(/\s+/g, ' ').trim()
-  return t
+function stripAnsi(text: string): string {
+  return text
+    .replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+    .replace(/\[\d+(;\d+)*m/g, '')
 }
 
 const ToolCallItem: React.FC<{ record: RuntimeTimelineToolRecord }> = ({ record }) => {
@@ -138,8 +134,21 @@ const ToolCallItem: React.FC<{ record: RuntimeTimelineToolRecord }> = ({ record 
         )}
         <span className="tool-call-status">{statusIcon}</span>
       </div>
-      {expanded && record.outputPreview && (
-        <div className="tool-call-detail">{cleanToolOutput(record.outputPreview)}</div>
+      {expanded && (
+        <div className="tool-call-expanded">
+          {record.input && (
+            <>
+              <div className="tool-call-section-label">input</div>
+              <pre className="tool-call-detail tool-call-detail-full">{formatJson(record.input)}</pre>
+            </>
+          )}
+          {(record.output || record.outputPreview) && (
+            <>
+              <div className="tool-call-section-label">output</div>
+              <pre className="tool-call-detail tool-call-detail-full">{stripAnsi(record.output || record.outputPreview || '')}</pre>
+            </>
+          )}
+        </div>
       )}
     </div>
   )
@@ -149,15 +158,11 @@ export const MessageList: React.FC<MessageListProps> = ({
   session,
   runtimeEvents,
   sending,
-  traceSessionId,
 }) => {
   const messages = session?.messages || []
   const listRef = useRef<HTMLDivElement>(null)
   const runtimeBlocks = buildRuntimeBlocks(runtimeEvents)
-  const shouldAttachToSession = Boolean(traceSessionId && session?.id && traceSessionId === session.id)
-  const persistedMessages = shouldAttachToSession && runtimeBlocks.length > 0 && messages.length > 0 && messages.at(-1)?.role === 'assistant'
-    ? messages.slice(0, -1)
-    : messages
+  const persistedMessages = messages
 
   useEffect(() => {
     if (listRef.current) {
@@ -165,7 +170,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     }
   }, [messages.length, runtimeEvents.length])
 
-  const showRuntimeBubble = runtimeBlocks.length > 0 && (sending || shouldAttachToSession)
+  const showRuntimeBubble = runtimeBlocks.length > 0 && sending
 
   return (
     <section ref={listRef} className="message-list" aria-live="polite">
@@ -186,10 +191,6 @@ export const MessageList: React.FC<MessageListProps> = ({
               createdAt={messages.at(-1)?.createdAt || runtimeEvents[0]?.at || new Date().toISOString()}
             />
           )}
-
-          {!showRuntimeBubble && shouldAttachToSession && messages.length > 0 && messages.at(-1)?.role === 'assistant' && (
-            <MessageItem message={messages.at(-1)!} />
-          )}
         </>
       )}
     </section>
@@ -197,29 +198,93 @@ export const MessageList: React.FC<MessageListProps> = ({
 }
 
 const MessageItem: React.FC<{ message: SessionMessage }> = ({ message }) => {
-  const isAssistant = message.role === 'assistant'
+  const displayRole = isToolResultMessage(message) ? 'assistant' : message.role
   const timestamp = formatMessageTimestamp(message.createdAt)
+  const contentBlocks = normalizeMessageBlocks(message.content)
 
   return (
-    <div className="message-row" data-role={message.role}>
-      {isAssistant && (
+    <div className="message-row" data-role={displayRole}>
+      {displayRole === 'assistant' && (
         <img src="/logo.png" className="agent-avatar" alt="Kraken" />
       )}
-      <div className="message-stack" data-role={message.role}>
+      <div className="message-stack" data-role={displayRole}>
         <div className="message-timestamp" aria-label={`Sent at ${timestamp}`}>
           {timestamp}
         </div>
-        <article className="message" data-role={message.role}>
-          <div
-            className="message-body"
-            dangerouslySetInnerHTML={
-              isAssistant
-                ? renderMarkdown(message.content)
-                : { __html: escapeHtml(message.content).replace(/\n/g, '<br>') }
-            }
-          />
+        <article className="message" data-role={displayRole}>
+          <div className="message-block-flow">
+            {contentBlocks.map((block, index) => (
+              <MessageContentBlock
+                key={`${block.type}-${index}`}
+                block={block}
+                role={message.role}
+              />
+            ))}
+          </div>
         </article>
       </div>
+    </div>
+  )
+}
+
+const MessageContentBlock: React.FC<{
+  block: AgentContentBlock
+  role: SessionMessage['role']
+}> = ({ block, role }) => {
+  if (block.type === 'text') {
+    return (
+      <div
+        className="message-body"
+        dangerouslySetInnerHTML={
+          role === 'assistant'
+            ? renderMarkdown(block.text)
+            : { __html: escapeHtml(block.text).replace(/\n/g, '<br>') }
+        }
+      />
+    )
+  }
+
+  if (block.type === 'tool_use') {
+    return (
+      <ToolDetailItem
+        title={block.name}
+        subtitle={block.id}
+        status="requested"
+        body={formatJson(block.input)}
+      />
+    )
+  }
+
+  return (
+    <ToolDetailItem
+      title={block.tool_name || block.tool_use_id}
+      subtitle={block.tool_use_id}
+      status={block.is_error ? 'error' : 'result'}
+      body={block.content}
+    />
+  )
+}
+
+const ToolDetailItem: React.FC<{
+  title: string
+  subtitle: string
+  status: 'requested' | 'result' | 'error'
+  body: string
+}> = ({ title, subtitle, status, body }) => {
+  const [expanded, setExpanded] = useState(true)
+  const toggle = useCallback(() => setExpanded((p) => !p), [])
+
+  return (
+    <div className="tool-detail-item" data-status={status}>
+      <button className="tool-detail-header" type="button" onClick={toggle}>
+        <span className="tool-call-arrow">{expanded ? '▼' : '▶'}</span>
+        <span className="tool-call-name">{title}</span>
+        <span className="tool-detail-label">{status}</span>
+        <span className="tool-call-input" title={subtitle}>{subtitle}</span>
+      </button>
+      {expanded && (
+        <pre className="tool-call-detail tool-call-detail-full">{stripAnsi(body)}</pre>
+      )}
     </div>
   )
 }
@@ -261,6 +326,25 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
+}
+
+function normalizeMessageBlocks(content: SessionMessage['content']): AgentContentBlock[] {
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }]
+  }
+  return content
+}
+
+function isToolResultMessage(message: SessionMessage): boolean {
+  return Array.isArray(message.content) && message.content.length > 0 && message.content.every((block) => block.type === 'tool_result')
+}
+
+function formatJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
 }
 
 function formatMessageTimestamp(value: string): string {

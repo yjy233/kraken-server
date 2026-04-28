@@ -91,6 +91,7 @@ export async function loopQuery(params: {
       toolUseId: toolUse.id,
       toolName: toolUse.name,
       outputPreview: truncate(collapseWhitespace(toolResult.output), 320),
+      output: toolResult.output,
       isError: toolResult.isError,
     })
   }

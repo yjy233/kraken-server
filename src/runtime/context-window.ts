@@ -1,9 +1,9 @@
-import type { AgentMessage, ToolDefinition } from '../agent/types.js'
+import type { AgentContentBlock, AgentMessage, ToolDefinition } from '../agent/types.js'
 import { collapseWhitespace, truncate } from '../utils/helpers.js'
 
 export interface HistoryMessage {
   role: 'user' | 'assistant'
-  content: string
+  content: string | AgentContentBlock[]
 }
 
 export type ContextCompressionMode = 'none' | 'partial' | 'full'
@@ -212,7 +212,8 @@ function splitByRecentUserTurns(messages: HistoryMessage[], keepTurns: number): 
   let splitIndex = 0
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === 'user') {
+    const message = messages[index]
+    if (message?.role === 'user' && !isToolResultOnlyMessage(message)) {
       userTurnsSeen += 1
       if (userTurnsSeen === keepTurns) {
         splitIndex = index
@@ -290,9 +291,10 @@ function groupTurns(messages: HistoryMessage[]): Array<{
   let currentTurn: { userParts: string[]; assistantParts: string[] } | null = null
 
   for (const message of messages) {
-    if (message.role === 'user') {
+    const content = historyMessageToText(message)
+    if (message.role === 'user' && !isToolResultOnlyMessage(message)) {
       currentTurn = {
-        userParts: [message.content],
+        userParts: [content],
         assistantParts: [],
       }
       turns.push(currentTurn)
@@ -306,7 +308,7 @@ function groupTurns(messages: HistoryMessage[]): Array<{
       }
       turns.push(currentTurn)
     }
-    currentTurn.assistantParts.push(message.content)
+    currentTurn.assistantParts.push(content)
   }
 
   return turns
@@ -331,7 +333,30 @@ function toAgentMessages(messages: HistoryMessage[]): AgentMessage[] {
 }
 
 function countUserTurns(messages: HistoryMessage[]): number {
-  return messages.filter((message) => message.role === 'user').length
+  return messages.filter((message) => {
+    return message.role === 'user' && !isToolResultOnlyMessage(message)
+  }).length
+}
+
+function historyMessageToText(message: HistoryMessage): string {
+  if (typeof message.content === 'string') {
+    return message.content
+  }
+  return message.content.map((block) => {
+    if (block.type === 'text') {
+      return block.text
+    }
+    if (block.type === 'tool_use') {
+      return `Tool call ${block.name}: ${JSON.stringify(block.input)}`
+    }
+    const label = block.tool_name || block.tool_use_id
+    const status = block.is_error ? 'error' : 'ok'
+    return `Tool result ${label} (${status}): ${block.content}`
+  }).join('\n')
+}
+
+function isToolResultOnlyMessage(message: HistoryMessage): boolean {
+  return Array.isArray(message.content) && message.content.length > 0 && message.content.every((block) => block.type === 'tool_result')
 }
 
 function estimateTokens(value: unknown): number {
