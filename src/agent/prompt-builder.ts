@@ -40,6 +40,8 @@ export class PromptBuilder {
       sections.push('', skillsMetaSection)
     }
 
+    sections.push('', this.buildMarkdownMediaGuidelines())
+
     const skillSection = this.buildSkillGuidelines()
     if (skillSection) {
       sections.push('', skillSection)
@@ -78,6 +80,16 @@ export class PromptBuilder {
       lines.push(`- ${tool.name}: ${tool.description}`)
     }
     return lines.join('\n')
+  }
+
+  /** Markdown 图片输出约定（所有输出通用） */
+  private buildMarkdownMediaGuidelines(): string {
+    return [
+      '## Markdown Media Guidelines',
+      '- When an image is useful in an answer or tool-derived summary, embed it with standard Markdown image syntax: `![alt text](path-or-url)`.',
+      '- For local images created or discovered with tools, use the exact readable file path returned by the tool.',
+      '- Do not invent local image paths, and do not inline base64 image data in normal responses.',
+    ].join('\n')
   }
 
   /** todo 工具使用指南（当 todo 开启时追加） */

@@ -116,9 +116,75 @@ function buildRuntimeBlocks(events: RuntimeEvent[]): RuntimeTimelineBlock[] {
   return blocks
 }
 
-function renderMarkdown(text: string): { __html: string } {
-  const html = marked.parse(text, { async: false, breaks: true, gfm: true }) as string
+function renderMarkdown(text: string, sessionId?: string | null): { __html: string } {
+  const renderer = new marked.Renderer()
+  renderer.image = ({ href, title, text }) => {
+    const src = rewriteMarkdownImageSrc(String(href || ''), sessionId)
+    if (!src) {
+      return escapeHtml(text || '')
+    }
+    const titleAttr = title ? ` title="${escapeHtmlAttribute(title)}"` : ''
+    return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(text || '')}"${titleAttr}>`
+  }
+  const html = marked.parse(text, { async: false, breaks: true, gfm: true, renderer }) as string
   return { __html: html }
+}
+
+function rewriteMarkdownImageSrc(src: string, sessionId?: string | null): string {
+  const trimmed = src.trim()
+  if (!trimmed) {
+    return ''
+  }
+  if (isDirectImageSrc(trimmed) || trimmed.startsWith('/api/')) {
+    return trimmed
+  }
+  if (hasBlockedImageProtocol(trimmed)) {
+    return ''
+  }
+  if (!sessionId) {
+    return trimmed
+  }
+
+  const localSrc = trimmed.toLowerCase().startsWith('file:')
+    ? fileUrlToPath(trimmed)
+    : trimmed
+  const params = new URLSearchParams({
+    sessionId,
+    src: localSrc,
+  })
+  return `/api/images?${params.toString()}`
+}
+
+function isDirectImageSrc(src: string): boolean {
+  return /^(https?:|blob:|\/\/)/i.test(src) || /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(src)
+}
+
+function hasBlockedImageProtocol(src: string): boolean {
+  const match = src.match(/^([a-z][a-z0-9+.-]*):/i)
+  if (!match) {
+    return false
+  }
+  const protocol = match[1]
+  if (!protocol) {
+    return false
+  }
+  return !['http', 'https', 'blob', 'file'].includes(protocol.toLowerCase())
+}
+
+function fileUrlToPath(src: string): string {
+  try {
+    const url = new URL(src)
+    if (url.protocol === 'file:') {
+      return decodeURIComponent(url.pathname)
+    }
+  } catch {
+    return src
+  }
+  return src
+}
+
+function containsMarkdownImage(text: string): boolean {
+  return /!\[[\s\S]*?\]\([^)]+\)/.test(text)
 }
 
 function stripAnsi(text: string): string {
@@ -127,7 +193,10 @@ function stripAnsi(text: string): string {
     .replace(/\[\d+(;\d+)*m/g, '')
 }
 
-const ToolCallItem: React.FC<{ record: RuntimeTimelineToolRecord }> = ({ record }) => {
+const ToolCallItem: React.FC<{
+  record: RuntimeTimelineToolRecord
+  sessionId: string | null
+}> = ({ record, sessionId }) => {
   const [expanded, setExpanded] = useState(false)
   const toggle = useCallback(() => setExpanded((p) => !p), [])
 
@@ -159,7 +228,10 @@ const ToolCallItem: React.FC<{ record: RuntimeTimelineToolRecord }> = ({ record 
           {(record.output || record.outputPreview) && (
             <>
               <div className="tool-call-section-label">output</div>
-              <pre className="tool-call-detail tool-call-detail-full">{stripAnsi(record.output || record.outputPreview || '')}</pre>
+              <ToolOutputBody
+                body={record.output || record.outputPreview || ''}
+                sessionId={sessionId}
+              />
             </>
           )}
         </div>
@@ -196,12 +268,13 @@ export const MessageList: React.FC<MessageListProps> = ({
       ) : (
         <>
           {persistedBubbles.map((bubble) => (
-            <MessageBubble key={bubble.id} bubble={bubble} />
+            <MessageBubble key={bubble.id} bubble={bubble} sessionId={session?.id || null} />
           ))}
 
           {showRuntimeBubble && (
             <RuntimeReplyBubble
               blocks={runtimeBlocks}
+              sessionId={session?.id || null}
               createdAt={messages.at(-1)?.createdAt || runtimeEvents[0]?.at || new Date().toISOString()}
             />
           )}
@@ -251,7 +324,7 @@ function buildDisplayBubbles(messages: SessionMessage[]): DisplayBubble[] {
   return bubbles
 }
 
-const MessageBubble: React.FC<{ bubble: DisplayBubble }> = ({ bubble }) => {
+const MessageBubble: React.FC<{ bubble: DisplayBubble; sessionId: string | null }> = ({ bubble, sessionId }) => {
   const timestamp = formatMessageTimestamp(bubble.createdAt)
 
   return (
@@ -270,6 +343,7 @@ const MessageBubble: React.FC<{ bubble: DisplayBubble }> = ({ bubble }) => {
                 key={`${block.type}-${index}`}
                 block={block}
                 role={role}
+                sessionId={sessionId}
               />
             ))}
           </div>
@@ -282,14 +356,15 @@ const MessageBubble: React.FC<{ bubble: DisplayBubble }> = ({ bubble }) => {
 const MessageContentBlock: React.FC<{
   block: AgentContentBlock
   role: SessionMessage['role']
-}> = ({ block, role }) => {
+  sessionId: string | null
+}> = ({ block, role, sessionId }) => {
   if (block.type === 'text') {
     return (
       <div
         className="message-body"
         dangerouslySetInnerHTML={
           role === 'assistant'
-            ? renderMarkdown(block.text)
+            ? renderMarkdown(block.text, sessionId)
             : { __html: escapeHtml(block.text).replace(/\n/g, '<br>') }
         }
       />
@@ -303,6 +378,8 @@ const MessageContentBlock: React.FC<{
         subtitle={block.id}
         status="requested"
         body={formatJson(block.input)}
+        sessionId={null}
+        allowMarkdownImages={false}
       />
     )
   }
@@ -313,6 +390,7 @@ const MessageContentBlock: React.FC<{
       subtitle={block.tool_use_id}
       status={block.is_error ? 'error' : 'result'}
       body={block.content}
+      sessionId={sessionId}
     />
   )
 }
@@ -322,7 +400,9 @@ const ToolDetailItem: React.FC<{
   subtitle: string
   status: 'requested' | 'result' | 'error'
   body: string
-}> = ({ title, subtitle, status, body }) => {
+  sessionId: string | null
+  allowMarkdownImages?: boolean
+}> = ({ title, subtitle, status, body, sessionId, allowMarkdownImages = true }) => {
   const [expanded, setExpanded] = useState(true)
   const toggle = useCallback(() => setExpanded((p) => !p), [])
 
@@ -335,16 +415,41 @@ const ToolDetailItem: React.FC<{
         <span className="tool-call-input" title={subtitle}>{subtitle}</span>
       </button>
       {expanded && (
-        <pre className="tool-call-detail tool-call-detail-full">{stripAnsi(body)}</pre>
+        <ToolOutputBody
+          body={body}
+          sessionId={sessionId}
+          allowMarkdownImages={allowMarkdownImages}
+        />
       )}
     </div>
   )
 }
 
+const ToolOutputBody: React.FC<{
+  body: string
+  sessionId: string | null
+  allowMarkdownImages?: boolean
+}> = ({ body, sessionId, allowMarkdownImages = true }) => {
+  const text = stripAnsi(body)
+  if (allowMarkdownImages && containsMarkdownImage(text)) {
+    return (
+      <div
+        className="tool-call-detail tool-call-detail-full tool-markdown-body message-body"
+        dangerouslySetInnerHTML={renderMarkdown(text, sessionId)}
+      />
+    )
+  }
+
+  return (
+    <pre className="tool-call-detail tool-call-detail-full">{text}</pre>
+  )
+}
+
 const RuntimeReplyBubble: React.FC<{
   blocks: RuntimeTimelineBlock[]
+  sessionId: string | null
   createdAt: string
-}> = ({ blocks, createdAt }) => {
+}> = ({ blocks, sessionId, createdAt }) => {
   const timestamp = formatMessageTimestamp(createdAt)
 
   return (
@@ -359,11 +464,11 @@ const RuntimeReplyBubble: React.FC<{
             {blocks.map((block) => (
               block.kind === 'assistant' ? (
                 <div key={block.id} className="runtime-reply-text">
-                  <div className="message-body" dangerouslySetInnerHTML={renderMarkdown(block.text)} />
+                  <div className="message-body" dangerouslySetInnerHTML={renderMarkdown(block.text, sessionId)} />
                 </div>
               ) : (
                 <div key={block.id} className="runtime-reply-tool">
-                  <ToolCallItem record={block.record} />
+                  <ToolCallItem record={block.record} sessionId={sessionId} />
                 </div>
               )
             ))}
@@ -378,6 +483,15 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 function normalizeMessageBlocks(content: SessionMessage['content']): AgentContentBlock[] {

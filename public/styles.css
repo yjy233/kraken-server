@@ -1461,6 +1461,21 @@ body {
   margin: 16px 0;
 }
 
+.message-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 520px;
+  margin: 10px 0;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.tool-markdown-body {
+  font-family: inherit;
+  color: var(--text);
+}
+
 /* ─── Animations ─────────────────────────────────── */
 
 @keyframes rise-in {

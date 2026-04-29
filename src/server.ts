@@ -3,11 +3,16 @@ import './bootstrap.js'
 import path from 'node:path'
 import os from 'node:os'
 import http from 'node:http'
+import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { createToolRegistry, type CreateRegistryOptions } from './tools/registry.js'
-import { parseSensitivePaths } from './tools/sandbox.js'
+import {
+  buildSessionSandboxPolicy,
+  parseSensitivePaths,
+  resolveSandboxPath,
+} from './tools/sandbox.js'
 import type { SessionSandboxConfig } from './tools/types.js'
 import { getAvailableSkills } from './skills/manager.js'
 import {
@@ -32,6 +37,14 @@ const ROOT_DIR = path.resolve(__dirname, '..')
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public')
 const SESSION_DIR = path.join(ROOT_DIR, '.sessions')
 const SCHEDULED_JOBS_DIR = path.join(ROOT_DIR, '.scheduled-jobs')
+const MAX_MARKDOWN_IMAGE_BYTES = 10 * 1024 * 1024
+const MARKDOWN_IMAGE_CONTENT_TYPES = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif'],
+])
 
 const HOST = process.env.HOST || '127.0.0.1'
 const PORT = parseInteger(process.env.PORT, 3011)
@@ -251,6 +264,59 @@ app.get('/api/workspace/file', async (req, res, next) => {
     const file = await workspaceBrowser.readFile(input)
     res.json({ ok: true, ...file })
   } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/images', async (req, res, next) => {
+  try {
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''
+    const src = typeof req.query.src === 'string' ? req.query.src.trim() : ''
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: 'sessionId query parameter is required' })
+    }
+    if (!src) {
+      return res.status(400).json({ ok: false, error: 'src query parameter is required' })
+    }
+
+    const session = await sessionStore.loadSession(sessionId)
+    if (!session) {
+      return res.status(404).json({ ok: false, error: 'Session not found' })
+    }
+
+    const sandboxPolicy = buildSessionSandboxPolicy({
+      sessionId: session.id,
+      sessionSandbox: session.sandbox,
+      defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+      sensitivePaths: SENSITIVE_PATHS,
+      enablePathSandbox: ENABLE_PATH_SANDBOX,
+    })
+    const imagePath = await resolveSandboxPath(sandboxPolicy, src, { mode: 'read' })
+    const extension = path.extname(imagePath).toLowerCase()
+    const contentType = MARKDOWN_IMAGE_CONTENT_TYPES.get(extension)
+    if (!contentType) {
+      return res.status(415).json({ ok: false, error: 'Unsupported image type' })
+    }
+
+    const stat = await fs.stat(imagePath)
+    if (!stat.isFile()) {
+      return res.status(404).json({ ok: false, error: 'Image not found' })
+    }
+    if (stat.size > MAX_MARKDOWN_IMAGE_BYTES) {
+      return res.status(413).json({ ok: false, error: 'Image is too large' })
+    }
+
+    res.setHeader('Content-Type', contentType)
+    res.setHeader('Cache-Control', 'private, max-age=60')
+    res.send(await fs.readFile(imagePath))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to load image'
+    if (isMissingFileError(error)) {
+      return res.status(404).json({ ok: false, error: 'Image not found' })
+    }
+    if (message.includes('sandbox policy') || message.includes('sensitive path')) {
+      return res.status(403).json({ ok: false, error: message })
+    }
     next(error)
   }
 })
@@ -516,6 +582,14 @@ function normalizeAgentBrowserAllowedDomains(value: string | undefined): string 
     return undefined
   }
   return normalized
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    (error as NodeJS.ErrnoException).code === 'ENOENT'
+  )
 }
 
 function buildScheduledJobInput(body: unknown): Omit<ScheduledJob, 'id' | 'createdAt' | 'updatedAt'> {
