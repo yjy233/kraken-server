@@ -155,7 +155,8 @@ export function buildShellEnv(policy: SessionSandboxPolicy): Record<string, stri
 export function buildSandboxPromptContext(policy: SessionSandboxPolicy): string {
   const lines = [
     '## Sandbox Context',
-    `- Workspace root: ${policy.workspaceRoot}`,
+    `- Current workspace directory: ${policy.workspaceRoot}`,
+    '- Treat the current workspace directory as the project root for relative paths.',
     `- Shell commands run with cwd: ${policy.workspaceRoot}`,
     `- Read access mode: ${policy.readMode}`,
     `- Write access is limited to: ${policy.workspaceRoot}`,
@@ -181,7 +182,7 @@ export function buildSandboxPromptContext(policy: SessionSandboxPolicy): string 
     }
   }
 
-  lines.push('- Prefer paths relative to the workspace root unless an absolute host path is required.')
+  lines.push('- Prefer paths relative to the current workspace directory unless an absolute host path is required.')
   lines.push('- Do not assume you can read or write outside the allowed sandbox roots.')
 
   return lines.join('\n')
