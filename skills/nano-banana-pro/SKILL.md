@@ -26,6 +26,16 @@ uv run /path/to/this/skill/scripts/generate_image.py --prompt "editing instructi
 uv run /path/to/this/skill/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" --output-dir "/custom/path"
 ```
 
+**Proxy:**
+- OpenRouter requests use a proxy by default: `http://127.0.0.1:7897`
+- Override with `--proxy "http://host:port"` or `NANO_BANANA_PROXY`
+- Existing `HTTPS_PROXY` / `HTTP_PROXY` env vars are also respected
+- Disable proxy for one run with `--proxy ""`
+
+```bash
+uv run /path/to/this/skill/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" --proxy "http://127.0.0.1:7897"
+```
+
 **Output Location:**
 - **Default:** Images are saved to `./output_images/` (relative to this skill's root directory)
 - **Custom:** Use `--output-dir` to specify a different directory
@@ -74,6 +84,7 @@ If neither is available, the script exits with an error message.
 - Common failures:
   - `Error: No API key provided.` → set `OPENROUTER_KEY` or pass `--api-key`
   - `Error loading input image:` → wrong path / unreadable file; verify `--input-image` points to a real image
+  - DNS / TLS / timeout errors in sandboxed execution → keep the local proxy running at `http://127.0.0.1:7897`, or pass `--proxy` / set `NANO_BANANA_PROXY`
   - “quota/permission/403” style API errors → wrong key, no access, or quota exceeded; try a different key/account
 
 ## Filename Generation

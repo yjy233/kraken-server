@@ -62,6 +62,14 @@ def main():
         "--api-key", "-k",
         help="OpenRouter API key (overrides OPENROUTER_KEY env var)"
     )
+    parser.add_argument(
+        "--proxy",
+        help=(
+            "HTTP(S) proxy URL for OpenRouter requests. "
+            "By default, generate_image.py uses NANO_BANANA_PROXY/HTTPS_PROXY/HTTP_PROXY "
+            "or http://127.0.0.1:7897. Pass an empty string to disable proxy."
+        )
+    )
 
     args = parser.parse_args()
 
@@ -90,6 +98,9 @@ def main():
     
     if args.api_key:
         cmd.extend(["--api-key", args.api_key])
+
+    if args.proxy is not None:
+        cmd.extend(["--proxy", args.proxy])
 
     # Run generation
     try:

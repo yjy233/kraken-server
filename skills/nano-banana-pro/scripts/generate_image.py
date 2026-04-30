@@ -20,11 +20,27 @@ import sys
 from pathlib import Path
 from typing import Any
 
+DEFAULT_PROXY_URL = "http://127.0.0.1:7897"
+
 def get_api_key(provided_key: str | None) -> str | None:
     """Get API key from argument first, then environment."""
     if provided_key:
         return provided_key
     return os.environ.get("OPENROUTER_KEY")
+
+def get_proxy_url(provided_proxy: str | None) -> str | None:
+    """Get proxy URL from argument, environment, or skill default."""
+    if provided_proxy is not None:
+        proxy = provided_proxy.strip()
+        return proxy or None
+    proxy = (
+        os.environ.get("NANO_BANANA_PROXY")
+        or os.environ.get("HTTPS_PROXY")
+        or os.environ.get("HTTP_PROXY")
+        or DEFAULT_PROXY_URL
+    )
+    proxy = proxy.strip()
+    return proxy or None
 
 def pil_image_to_data_url(image_path: str) -> str:
     with open(image_path, "rb") as f:
@@ -51,7 +67,7 @@ def save_data_url_to_png(data_url: str, output_path: Path) -> None:
     else:
         image.convert("RGB").save(str(output_path), "PNG")
 
-def post_openrouter(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
+def post_openrouter(payload: dict[str, Any], api_key: str, proxy_url: str | None = None) -> dict[str, Any]:
     import requests
 
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -59,7 +75,8 @@ def post_openrouter(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=180)
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    resp = requests.post(url, headers=headers, json=payload, timeout=180, proxies=proxies)
     if not resp.ok:
         raise RuntimeError(f"OpenRouter API error: HTTP {resp.status_code}: {resp.text}")
     return resp.json()
@@ -103,6 +120,14 @@ def main():
         "--output-dir", "-o",
         help="Output directory (default: skill_dir/output_images)"
     )
+    parser.add_argument(
+        "--proxy",
+        help=(
+            f"HTTP(S) proxy URL for OpenRouter requests. "
+            f"Defaults to NANO_BANANA_PROXY/HTTPS_PROXY/HTTP_PROXY or {DEFAULT_PROXY_URL}. "
+            "Pass an empty string to disable proxy."
+        )
+    )
 
     args = parser.parse_args()
 
@@ -114,6 +139,7 @@ def main():
         print("  1. Provide --api-key argument", file=sys.stderr)
         print("  2. Set OPENROUTER_KEY environment variable", file=sys.stderr)
         sys.exit(1)
+    proxy_url = get_proxy_url(args.proxy)
 
     from PIL import Image as PILImage
 
@@ -181,7 +207,9 @@ def main():
             },
         }
 
-        result = post_openrouter(payload=payload, api_key=api_key)
+        if proxy_url:
+            print(f"Using proxy: {proxy_url}")
+        result = post_openrouter(payload=payload, api_key=api_key, proxy_url=proxy_url)
         choices = result.get("choices")
         if not choices:
             print("Error: No choices returned from API.", file=sys.stderr)
