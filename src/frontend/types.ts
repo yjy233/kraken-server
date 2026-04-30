@@ -47,8 +47,11 @@ export interface WorkspaceListing {
 export interface WorkspaceFile {
   workspaceRoot: string
   path: string
-  contentType: 'markdown' | 'text'
-  content: string
+  contentType: 'markdown' | 'text' | 'image' | 'binary'
+  content?: string
+  size: number
+  extension?: string
+  mediaType?: string
 }
 
 export interface Session {

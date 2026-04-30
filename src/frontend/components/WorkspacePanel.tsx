@@ -144,27 +144,167 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
         {loadingFile && <p className="workspace-empty">Loading file…</p>}
         {!loadingFile && !selectedFile && (
           <div className="workspace-preview-empty">
-            <h3>Markdown Preview</h3>
-            <p>Select a Markdown file from the workspace tree to preview it here.</p>
+            <h3>File Preview</h3>
+            <p>Select a file from the workspace tree to preview text, Markdown, or images.</p>
           </div>
         )}
         {!loadingFile && selectedFile && (
           <article className="workspace-document">
             <div className="workspace-document-header">
               <h3>{selectedFile.path}</h3>
-              <span>{selectedFile.contentType}</span>
+              <span>{selectedFile.contentType} · {formatBytes(selectedFile.size)}</span>
             </div>
-            {selectedFile.contentType === 'markdown' ? (
-              <div
-                className="workspace-markdown message-body"
-                dangerouslySetInnerHTML={{ __html: marked.parse(selectedFile.content, { async: false, breaks: true, gfm: true }) as string }}
-              />
-            ) : (
-              <pre className="workspace-text">{selectedFile.content}</pre>
-            )}
+            <WorkspaceFilePreview file={selectedFile} sessionId={sessionId} />
           </article>
         )}
       </div>
     </section>
   )
+}
+
+const WorkspaceFilePreview: React.FC<{
+  file: WorkspaceFile
+  sessionId: string | null
+}> = ({ file, sessionId }) => {
+  if (file.contentType === 'markdown') {
+    return (
+      <div
+        className="workspace-markdown message-body"
+        dangerouslySetInnerHTML={renderWorkspaceMarkdown(file.content || '', file.path, sessionId)}
+      />
+    )
+  }
+
+  if (file.contentType === 'text') {
+    return <pre className="workspace-text">{file.content || ''}</pre>
+  }
+
+  if (file.contentType === 'image') {
+    return (
+      <div className="workspace-image-preview">
+        <img src={buildWorkspaceImageUrl(file.path, sessionId)} alt={file.path} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="workspace-file-info">
+      <h4>No inline preview</h4>
+      <p>This file is treated as binary or is too large for text preview.</p>
+      <dl>
+        <div>
+          <dt>Path</dt>
+          <dd>{file.path}</dd>
+        </div>
+        <div>
+          <dt>Type</dt>
+          <dd>{file.extension || 'unknown'}</dd>
+        </div>
+        <div>
+          <dt>Size</dt>
+          <dd>{formatBytes(file.size)}</dd>
+        </div>
+      </dl>
+    </div>
+  )
+}
+
+function buildWorkspaceImageUrl(path: string, sessionId: string | null): string {
+  const params = new URLSearchParams({ src: path })
+  if (sessionId) {
+    params.set('sessionId', sessionId)
+  }
+  return `/api/images?${params.toString()}`
+}
+
+function renderWorkspaceMarkdown(text: string, filePath: string, sessionId: string | null): { __html: string } {
+  const renderer = new marked.Renderer()
+  renderer.image = ({ href, title, text: altText }) => {
+    const src = rewriteWorkspaceImageSrc(String(href || ''), filePath, sessionId)
+    const titleAttr = title ? ` title="${escapeHtmlAttribute(title)}"` : ''
+    return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(altText || '')}"${titleAttr}>`
+  }
+  return {
+    __html: marked.parse(text, { async: false, breaks: true, gfm: true, renderer }) as string,
+  }
+}
+
+function rewriteWorkspaceImageSrc(src: string, filePath: string, sessionId: string | null): string {
+  const trimmed = src.trim()
+  if (!trimmed || isDirectImageSrc(trimmed) || trimmed.startsWith('/api/')) {
+    return trimmed
+  }
+  if (hasBlockedImageProtocol(trimmed)) {
+    return ''
+  }
+  const localSrc = trimmed.toLowerCase().startsWith('file:')
+    ? fileUrlToPath(trimmed)
+    : resolveWorkspaceRelativePath(filePath, trimmed)
+  return buildWorkspaceImageUrl(localSrc, sessionId)
+}
+
+function resolveWorkspaceRelativePath(filePath: string, imagePath: string): string {
+  if (imagePath.startsWith('/') || imagePath.startsWith('~/')) {
+    return imagePath
+  }
+  const directory = filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/')) : '.'
+  if (directory === '.') {
+    return imagePath
+  }
+  return `${directory}/${imagePath}`
+}
+
+function isDirectImageSrc(src: string): boolean {
+  return /^(https?:|blob:|\/\/)/i.test(src) || /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(src)
+}
+
+function hasBlockedImageProtocol(src: string): boolean {
+  const match = src.match(/^([a-z][a-z0-9+.-]*):/i)
+  if (!match) {
+    return false
+  }
+  const protocol = match[1]
+  if (!protocol) {
+    return false
+  }
+  return !['http', 'https', 'blob', 'file'].includes(protocol.toLowerCase())
+}
+
+function fileUrlToPath(src: string): string {
+  try {
+    const url = new URL(src)
+    if (url.protocol === 'file:') {
+      return decodeURIComponent(url.pathname)
+    }
+  } catch {
+    return src
+  }
+  return src
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return 'unknown size'
+  }
+  if (value < 1024) {
+    return `${value} B`
+  }
+  const units = ['KB', 'MB', 'GB']
+  let size = value / 1024
+  for (const unit of units) {
+    if (size < 1024) {
+      return `${size.toFixed(size >= 10 ? 0 : 1)} ${unit}`
+    }
+    size /= 1024
+  }
+  return `${size.toFixed(0)} TB`
 }

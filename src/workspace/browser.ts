@@ -3,15 +3,8 @@ import path from 'node:path'
 import { buildSessionSandboxPolicy, resolveSandboxPath, toDisplayPath } from '../tools/sandbox.js'
 import type { SessionSandboxConfig } from '../tools/types.js'
 
-const MAX_FILE_BYTES = 2 * 1024 * 1024
-const SKIPPED_NAMES = new Set([
-  '.git',
-  'node_modules',
-  '.sessions',
-  '.scheduled-jobs',
-  'dist',
-  '.sandbox',
-])
+const MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
 
 export interface WorkspaceEntryRecord {
   name: string
@@ -30,8 +23,11 @@ export interface WorkspaceDirectoryListing {
 export interface WorkspaceFileRecord {
   workspaceRoot: string
   path: string
-  contentType: 'markdown' | 'text'
-  content: string
+  contentType: 'markdown' | 'text' | 'image' | 'binary'
+  content?: string
+  size: number
+  extension?: string
+  mediaType?: string
 }
 
 export function createWorkspaceBrowserService(config: {
@@ -72,9 +68,6 @@ export function createWorkspaceBrowserService(config: {
     const entries: WorkspaceEntryRecord[] = []
 
     for (const item of items) {
-      if (SKIPPED_NAMES.has(item.name)) {
-        continue
-      }
       const absolutePath = path.join(targetPath, item.name)
       const displayPath = toDisplayPath(sandboxPolicy, absolutePath)
       const kind = item.isDirectory() ? 'directory' : 'file'
@@ -125,18 +118,37 @@ export function createWorkspaceBrowserService(config: {
     if (!stat.isFile()) {
       throw new Error('Requested path is not a file')
     }
-    if (stat.size > MAX_FILE_BYTES) {
-      throw new Error(`File is too large to preview (${stat.size} bytes)`)
-    }
-
-    const content = await fs.readFile(targetPath, 'utf8')
     const displayPath = toDisplayPath(sandboxPolicy, targetPath)
-
-    return {
+    const extension = path.extname(displayPath).toLowerCase()
+    const baseRecord: WorkspaceFileRecord = {
       workspaceRoot: sandboxPolicy.workspaceRoot,
       path: displayPath,
-      contentType: isMarkdownFile(displayPath) ? 'markdown' : 'text',
-      content,
+      contentType: inferWorkspaceContentType(displayPath),
+      size: stat.size,
+    }
+    if (extension) {
+      baseRecord.extension = extension
+    }
+    if (baseRecord.contentType === 'image') {
+      const mediaType = imageMediaType(extension)
+      if (mediaType) {
+        baseRecord.mediaType = mediaType
+      }
+      return baseRecord
+    }
+    if (baseRecord.contentType === 'binary') {
+      return baseRecord
+    }
+    if (stat.size > MAX_TEXT_FILE_BYTES) {
+      return {
+        ...baseRecord,
+        contentType: 'binary',
+      }
+    }
+
+    return {
+      ...baseRecord,
+      content: await fs.readFile(targetPath, 'utf8'),
     }
   }
 
@@ -158,4 +170,84 @@ async function exists(targetPath: string): Promise<boolean> {
 function isMarkdownFile(filePath: string): boolean {
   const extension = path.extname(filePath).toLowerCase()
   return extension === '.md' || extension === '.markdown' || extension === '.mdx'
+}
+
+function inferWorkspaceContentType(filePath: string): WorkspaceFileRecord['contentType'] {
+  const extension = path.extname(filePath).toLowerCase()
+  if (isMarkdownFile(filePath)) {
+    return 'markdown'
+  }
+  if (IMAGE_EXTENSIONS.has(extension)) {
+    return 'image'
+  }
+  if (isLikelyTextFile(extension)) {
+    return 'text'
+  }
+  return 'binary'
+}
+
+function imageMediaType(extension: string): string | undefined {
+  switch (extension) {
+    case '.png':
+      return 'image/png'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.webp':
+      return 'image/webp'
+    case '.gif':
+      return 'image/gif'
+    default:
+      return undefined
+  }
+}
+
+function isLikelyTextFile(extension: string): boolean {
+  if (!extension) {
+    return true
+  }
+  return new Set([
+    '.txt',
+    '.json',
+    '.jsonl',
+    '.js',
+    '.jsx',
+    '.ts',
+    '.tsx',
+    '.mjs',
+    '.cjs',
+    '.css',
+    '.scss',
+    '.sass',
+    '.less',
+    '.html',
+    '.htm',
+    '.xml',
+    '.svg',
+    '.yml',
+    '.yaml',
+    '.toml',
+    '.ini',
+    '.env',
+    '.sh',
+    '.bash',
+    '.zsh',
+    '.py',
+    '.rb',
+    '.go',
+    '.rs',
+    '.java',
+    '.c',
+    '.h',
+    '.cpp',
+    '.hpp',
+    '.cs',
+    '.php',
+    '.sql',
+    '.csv',
+    '.tsv',
+    '.log',
+    '.gitignore',
+    '.dockerignore',
+  ]).has(extension)
 }

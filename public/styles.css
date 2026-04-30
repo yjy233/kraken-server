@@ -1018,6 +1018,64 @@ body {
   line-height: 1.6;
 }
 
+.workspace-image-preview {
+  min-height: 0;
+  padding: 20px 22px 26px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.workspace-image-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 260px);
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.workspace-file-info {
+  padding: 24px 22px 28px;
+  color: var(--text-secondary);
+}
+
+.workspace-file-info h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.workspace-file-info p {
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+
+.workspace-file-info dl {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-file-info dl > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.workspace-file-info dt {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.workspace-file-info dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
 .workspace-error {
   margin: 18px;
 }

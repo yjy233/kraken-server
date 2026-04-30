@@ -272,21 +272,18 @@ app.get('/api/images', async (req, res, next) => {
   try {
     const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''
     const src = typeof req.query.src === 'string' ? req.query.src.trim() : ''
-    if (!sessionId) {
-      return res.status(400).json({ ok: false, error: 'sessionId query parameter is required' })
-    }
     if (!src) {
       return res.status(400).json({ ok: false, error: 'src query parameter is required' })
     }
 
-    const session = await sessionStore.loadSession(sessionId)
-    if (!session) {
+    const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+    if (sessionId && !session) {
       return res.status(404).json({ ok: false, error: 'Session not found' })
     }
 
     const sandboxPolicy = buildSessionSandboxPolicy({
-      sessionId: session.id,
-      sessionSandbox: session.sandbox,
+      sessionId: session?.id || 'workspace-browser',
+      sessionSandbox: session?.sandbox,
       defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
       sensitivePaths: SENSITIVE_PATHS,
       enablePathSandbox: ENABLE_PATH_SANDBOX,

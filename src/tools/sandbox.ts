@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { SessionSandboxConfig, SessionSandboxPolicy } from './types.js'
 import { expandHomePath, isRecord } from '../utils/helpers.js'
@@ -10,8 +11,6 @@ const DEFAULT_SENSITIVE_PATHS = [
   '~/.config/gcloud',
   '~/.config/gh',
   '~/Library/Keychains',
-  '/etc',
-  '/private/etc',
 ]
 
 export function normalizeHostPath(inputPath: string): string {
@@ -133,13 +132,24 @@ export function toDisplayPath(policy: SessionSandboxPolicy, targetPath: string):
 }
 
 export function buildShellEnv(policy: SessionSandboxPolicy): Record<string, string> {
-  return {
+  const env: Record<string, string> = {
     PATH: process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin',
     HOME: policy.workspaceRoot,
     TMPDIR: policy.tmpDir,
     LANG: process.env.LANG || 'en_US.UTF-8',
     LC_ALL: process.env.LC_ALL || process.env.LANG || 'en_US.UTF-8',
   }
+
+  const certificateFile = process.env.SSL_CERT_FILE || process.env.REQUESTS_CA_BUNDLE || findCertificateBundle()
+  if (certificateFile) {
+    env.SSL_CERT_FILE = certificateFile
+    env.REQUESTS_CA_BUNDLE = certificateFile
+  }
+  if (process.env.SSL_CERT_DIR) {
+    env.SSL_CERT_DIR = process.env.SSL_CERT_DIR
+  }
+
+  return env
 }
 
 export function buildSandboxPromptContext(policy: SessionSandboxPolicy): string {
@@ -185,15 +195,26 @@ export async function generateSeatbeltProfile(policy: SessionSandboxPolicy): Pro
     '',
     '(deny default)',
     '(allow process*)',
+    '(allow network*)',
     '(allow sysctl-read)',
     '(allow signal (target self))',
     '(allow file-read-metadata)',
+    '(allow file-read* (subpath "/opt/homebrew"))',
+    '(allow file-read* (subpath "/usr/local"))',
     '(allow file-read* (subpath "/usr"))',
     '(allow file-read* (subpath "/bin"))',
     '(allow file-read* (subpath "/sbin"))',
     '(allow file-read* (subpath "/System"))',
-    '(allow file-read* (literal "/dev/null"))',
+    '(allow file-read* (subpath "/etc"))',
+    '(allow file-read* (subpath "/private/etc"))',
+    '(allow file-read* (subpath "/private/var/run"))',
+    '(allow file-read* (subpath "/Library/Developer/CommandLineTools"))',
+    '(allow file-read* file-write* (literal "/dev/null"))',
     '(allow file-read* (literal "/dev/urandom"))',
+    '(allow file-read* (literal "/dev/random"))',
+    '(allow file-read* (literal "/dev/zero"))',
+    '(allow file-read* (subpath "/dev/fd"))',
+    '(allow file-read* (subpath "/private/dev/fd"))',
     ...policy.writeRoots.map((root) => `(allow file-read* file-write* (subpath ${JSON.stringify(root)}))`),
   ]
 
@@ -237,6 +258,16 @@ function isSensitivePath(policy: SessionSandboxPolicy, candidate: string): boole
 
 function isWithinAnyRoot(roots: string[], candidate: string): boolean {
   return roots.some((root) => isWithinRoot(root, candidate))
+}
+
+function findCertificateBundle(): string | undefined {
+  const candidates = [
+    '/opt/homebrew/etc/ca-certificates/cert.pem',
+    '/opt/homebrew/etc/openssl@3/cert.pem',
+    '/etc/ssl/cert.pem',
+    '/private/etc/ssl/cert.pem',
+  ]
+  return candidates.find((candidate) => existsSync(candidate))
 }
 
 async function canonicalizePath(candidate: string, allowMissing: boolean): Promise<string> {
