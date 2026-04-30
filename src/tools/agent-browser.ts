@@ -477,7 +477,7 @@ async function runAgentBrowser(
 function buildAgentBrowserEnv(ctx: ToolContext): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    HOME: ctx.sandboxPolicy.workspaceRoot,
+    HOME: process.env.HOME || ctx.sandboxPolicy.workspaceRoot,
     TMPDIR: ctx.sandboxPolicy.tmpDir,
     AGENT_BROWSER_SESSION: buildBrowserSessionName(ctx.sessionId),
   }

@@ -83,6 +83,51 @@ When enabled, the agent gets an `agent_browser` tool. Each Kraken session maps t
 
 If you use `ENABLED_TOOLS`, include `agent_browser` in that comma-separated list.
 
+### Browser Login State
+
+By default, `agent-browser` starts an isolated browser session and will not automatically share your normal browser login state. Kraken preserves your real `HOME` for `agent-browser`, so the CLI can use its built-in auth options through `.env`.
+
+Pick one strategy:
+
+```bash
+# Reuse an existing Chrome profile. Check names with: agent-browser profiles
+AGENT_BROWSER_PROFILE=Default
+
+# Or connect to an already-running Chrome that was started with remote debugging.
+AGENT_BROWSER_AUTO_CONNECT=true
+
+# Or let agent-browser save/restore cookies and localStorage under a named state.
+AGENT_BROWSER_SESSION_NAME=kraken
+
+# Or load a previously saved state file.
+AGENT_BROWSER_STATE=/absolute/path/to/auth.json
+```
+
+Do not use the same live Chrome profile in two running Chrome instances at once. If Chrome rejects the profile because it is already locked, use `AGENT_BROWSER_AUTO_CONNECT=true` or create a dedicated profile for Kraken.
+
+Recommended dedicated Chrome setup:
+
+```bash
+# Create a separate Chrome user data directory for Kraken.
+mkdir -p "$HOME/.kraken/chrome-debug-profile"
+
+# Start Chrome with remote debugging enabled and the dedicated profile.
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.kraken/chrome-debug-profile"
+```
+
+After Chrome opens, sign in to the sites Kraken should use. Then configure `.env` with only the auto-connect strategy:
+
+```bash
+AGENT_BROWSER_AUTO_CONNECT=true
+# AGENT_BROWSER_PROFILE=Default
+# AGENT_BROWSER_SESSION_NAME=kraken
+# AGENT_BROWSER_STATE=
+```
+
+Restart Kraken after changing `.env`. Keep this dedicated Chrome window running while using `agent_browser`; a normal Chrome window launched without `--remote-debugging-port=9222` cannot be auto-connected.
+
 ## License
 
 MIT
