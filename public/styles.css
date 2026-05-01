@@ -265,6 +265,7 @@ body {
   padding: 8px 14px;
   background: var(--brand);
   color: #fff;
+  white-space: nowrap;
 }
 
 .ghost-button:hover {
@@ -398,6 +399,7 @@ body {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .model-pill {
@@ -407,11 +409,13 @@ body {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .session-count {
   font-size: 13px;
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 /* ─── Message List ───────────────────────────────── */
