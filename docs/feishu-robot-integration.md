@@ -144,6 +144,14 @@ FEISHU_REPLY_MODE=reply
 FEISHU_DEFAULT_SYSTEM_PROMPT=
 FEISHU_MAX_CONCURRENCY=1
 FEISHU_DEDUPE_TTL_MS=600000
+FEISHU_INCLUDE_MESSAGE_META=true
+
+# quasi-streaming for Feishu replies
+FEISHU_STREAMING_ENABLED=false
+FEISHU_STREAMING_MODE=update
+FEISHU_STREAMING_FLUSH_INTERVAL_MS=1500
+FEISHU_STREAMING_MIN_DELTA_CHARS=80
+FEISHU_STREAMING_MAX_UPDATES=20
 ```
 
 配置说明：
@@ -153,6 +161,11 @@ FEISHU_DEDUPE_TTL_MS=600000
 - `FEISHU_ENCRYPT_KEY` 用于飞书事件加密解密，第一阶段可先不启用加密。
 - `FEISHU_SESSION_MODE=chat` 时，群聊所有人共享上下文。
 - `FEISHU_SESSION_MODE=user` 时，群聊里每个用户独立上下文。
+- `FEISHU_INCLUDE_MESSAGE_META=true` 时，会把经过筛选的飞书消息元信息传给 agent，便于 agent 理解消息来源和引用关系。
+- `FEISHU_STREAMING_ENABLED=true` 时，启用飞书准流式回复。默认建议先关闭，MVP 稳定后再开启。
+- `FEISHU_STREAMING_MODE=update` 时，先发送一条占位消息，再定时编辑同一条机器人消息。
+- `FEISHU_STREAMING_FLUSH_INTERVAL_MS` 控制最短更新间隔，避免触发飞书接口频控。
+- `FEISHU_STREAMING_MAX_UPDATES` 控制单条回复最多编辑次数，超过后只在最终完成时更新一次。
 
 ## 8. 飞书后台配置
 
@@ -219,19 +232,150 @@ agentService.run({
 })
 ```
 
-建议给消息加少量来源上下文：
+建议给消息加少量来源上下文和安全筛选后的 meta 信息：
 
 ```text
 [Feishu message]
+message_id: om_xxx
+event_id: ev_xxx
 chat_type: group
+chat_id: oc_xxx
+sender_id: ou_xxx
 sender_name: 张三
+thread_id: omt_xxx
+create_time: 2026-05-01T09:30:00.000Z
 
 用户原文...
 ```
 
 注意：不要把飞书 access token、app secret 等敏感信息写入 agent 上下文。
 
-### 9.4 回复飞书
+### 9.4 消息 meta 设计
+
+飞书来源的消息建议保留两层信息：
+
+1. 传给 agent 的可见 meta：帮助 agent 理解消息上下文。
+2. 存在 session record 里的内部 meta：帮助系统做回复、审计、幂等和排障。
+
+建议新增本地结构：
+
+```ts
+interface FeishuMessageMeta {
+  provider: 'feishu'
+  eventId?: string
+  messageId: string
+  rootMessageId?: string
+  parentMessageId?: string
+  threadId?: string
+  chatId: string
+  chatType: 'p2p' | 'group'
+  senderId: string
+  senderType?: 'user' | 'app'
+  senderName?: string
+  messageType: string
+  createTime?: string
+  conversationKey: string
+  mentionBot: boolean
+}
+```
+
+传给 agent 的 meta 字段建议保持最小化：
+
+- `message_id`
+- `event_id`
+- `chat_type`
+- `chat_id`
+- `sender_id`
+- `sender_name`
+- `thread_id`
+- `create_time`
+
+不传给 agent 的字段：
+
+- `tenant_access_token`
+- `app_secret`
+- `verification_token`
+- `encrypt_key`
+- 原始飞书 HTTP headers
+- 未脱敏的手机号、邮箱等用户 profile 扩展字段
+
+### 9.5 Agent 消息包装格式
+
+为了让 agent 可以稳定识别外部来源，adapter 不应该只拼一句自然语言。建议统一生成如下文本：
+
+```text
+<external_message provider="feishu">
+message_id: om_xxx
+event_id: ev_xxx
+chat_type: group
+chat_id: oc_xxx
+sender_id: ou_xxx
+sender_name: 张三
+thread_id: omt_xxx
+create_time: 2026-05-01T09:30:00.000Z
+</external_message>
+
+用户消息正文...
+```
+
+实现时仍然作为普通 `message: string` 传给 `agentService.run(...)`，这样不需要第一阶段改 agent message schema。后续如果要让 UI 或上下文压缩更精确，可以再把 `SessionMessageRecord` 扩展出 `meta` 字段。
+
+### 9.6 Session message meta 扩展建议
+
+当前 `SessionMessageRecord` 只有：
+
+```ts
+interface SessionMessageRecord {
+  id: string
+  role: 'user' | 'assistant'
+  content: SessionMessageContent
+  createdAt: string
+}
+```
+
+为了保留外部通道信息，建议扩展为：
+
+```ts
+interface SessionMessageRecord {
+  id: string
+  role: 'user' | 'assistant'
+  content: SessionMessageContent
+  createdAt: string
+  meta?: {
+    source?: 'web' | 'feishu' | 'scheduler'
+    feishu?: FeishuMessageMeta
+  }
+}
+```
+
+第一阶段可以先不改历史压缩逻辑，只在保存 session 时保留 meta。压缩时仍只压缩 `role/content`，但摘要内容里已经有外部消息 wrapper，所以 agent 不会丢失关键来源信息。
+
+后续可以优化：
+
+- context 压缩时保留最近消息的 `meta`。
+- 前端 message bubble 展示来源标签。
+- Files/Session 详情里显示外部 message id。
+- 出错时通过 `message_id` 快速定位飞书原消息。
+
+### 9.7 message_id 的用途
+
+`message_id` 至少用于四件事：
+
+- 回复：`reply message` API 需要用原始 `message_id`。
+- 幂等：飞书重试时同一 `message_id` 不重复执行 agent。
+- 审计：session message 可以追溯到飞书原消息。
+- 文件目录：后续下载图片/文件时，可以存到 `.feishu-sessions/files/{message_id}/`。
+
+推荐规则：
+
+```text
+dedupe key = message_id || event_id
+reply target = message_id
+session user message meta.feishu.messageId = message_id
+file bucket = .feishu-sessions/files/{message_id}/
+```
+
+### 9.8 回复飞书
 
 MVP 使用回复原消息：
 
@@ -270,6 +414,106 @@ FEISHU_MAX_CONCURRENCY=1
 ```
 
 后续如果需要多实例部署，再引入 Redis / database queue。
+
+### 10.1 飞书准流式回复
+
+飞书消息通道不等价于 WebSocket，不能像 Web 前端一样把 token 逐个推给用户。推荐实现“准流式”：
+
+```text
+receive event
+  -> enqueue background task
+  -> send/reply placeholder message: "处理中..."
+  -> run agent with emit callback
+  -> aggregate assistant deltas into buffer
+  -> update the same Feishu bot message every N ms
+  -> final update with complete answer
+```
+
+默认策略：
+
+- 不发送多条增量消息，避免群聊刷屏。
+- 优先编辑同一条机器人自己发出的消息。
+- 只在内容变化足够大时更新，例如新增超过 `FEISHU_STREAMING_MIN_DELTA_CHARS`。
+- 更新间隔不低于 `FEISHU_STREAMING_FLUSH_INTERVAL_MS`。
+- 超过 `FEISHU_STREAMING_MAX_UPDATES` 后停止中间更新，只保留最终更新。
+- 如果飞书更新消息接口失败，降级为“处理中...” + 最终回复。
+
+### 10.2 Streaming 状态机
+
+建议给每个飞书后台任务维护一个 `FeishuReplyStreamState`：
+
+```ts
+interface FeishuReplyStreamState {
+  enabled: boolean
+  mode: 'update' | 'none'
+  sourceMessageId: string
+  placeholderMessageId?: string
+  buffer: string
+  lastFlushedText: string
+  lastFlushAt: number
+  updateCount: number
+  closed: boolean
+}
+```
+
+执行流程：
+
+1. 收到飞书消息后，后台任务先调用回复或发送接口生成占位消息。
+2. 记录占位消息返回的 `message_id` 为 `placeholderMessageId`。
+3. 调用 `agentService.run(...)` 时传入 `emit` 回调。
+4. 在 `emit` 中监听 `assistant:delta`，把文本追加或覆盖到 `buffer`。
+5. 定时 flush：把 `buffer` 转成飞书可接受的文本/富文本，然后更新 `placeholderMessageId`。
+6. agent 完成后，强制最后 flush 一次完整 `result.reply`。
+7. agent 失败时，把占位消息更新为失败提示。
+
+伪代码：
+
+```ts
+const stream = await feishuReplyStream.createPlaceholder(sourceMessageId)
+
+const result = await agentService.run(input, (event, data) => {
+  if (event !== 'assistant:delta') return
+  stream.appendDelta(data)
+  void stream.flushIfNeeded()
+})
+
+await stream.close(result.reply)
+```
+
+### 10.3 更新消息 API 兼容策略
+
+飞书存在多种“更新消息”能力，不同消息类型和 SDK 版本支持范围不同。实现时不要把准流式绑定死在某一种消息格式上。
+
+推荐顺序：
+
+1. 优先使用普通消息编辑能力更新机器人自己发送的文本消息。
+2. 如果文本消息编辑不满足当前飞书租户/API 能力，改用可更新的消息卡片。
+3. 如果更新接口返回权限、类型或次数限制错误，降级为最终一次回复。
+
+封装接口建议：
+
+```ts
+interface FeishuClient {
+  replyText(sourceMessageId: string, text: string): Promise<{ messageId: string }>
+  sendText(chatId: string, text: string): Promise<{ messageId: string }>
+  updateText(messageId: string, text: string): Promise<void>
+  updateCard?(messageId: string, card: unknown): Promise<void>
+}
+```
+
+`FeishuReplyStream` 不直接依赖飞书 SDK 细节，只依赖这个 client interface。
+
+### 10.4 与 Agent Runtime 的关系
+
+准流式只消费 agent runtime 已经发出的事件，不要求 agent 直接知道飞书。
+
+```text
+agent emit assistant:delta
+  -> FeishuReplyStream buffer
+  -> timed update message
+```
+
+agent 最终仍只返回 `result.reply`。即使中间 streaming 全部失败，也必须保证最终回复路径可用。
 
 ## 11. 幂等与状态存储
 
@@ -385,6 +629,7 @@ MVP 先纯文本回复。原因：
 ### Phase 2: 体验完善
 
 - “处理中...”即时反馈。
+- 准流式回复：通过编辑同一条机器人消息更新内容。
 - 长回复拆分。
 - Markdown 基础转换。
 - 群聊按用户隔离配置。
@@ -421,6 +666,8 @@ MVP 先纯文本回复。原因：
 - 群聊直接发消息，不触发。
 - 群聊 @ 机器人，触发。
 - 重复投递同一 `message_id`，只回复一次。
+- `FEISHU_STREAMING_ENABLED=true` 时，先出现占位消息，随后同一条消息被更新为部分内容和最终内容。
+- 更新消息接口失败时，不重复刷屏，最终回复仍可送达。
 - agent 报错时，飞书收到错误提示。
 
 回归：
@@ -428,4 +675,3 @@ MVP 先纯文本回复。原因：
 - Web 前端聊天仍正常。
 - scheduler 仍正常。
 - Files tab 和 workspace 图片渲染不受影响。
-
