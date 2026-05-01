@@ -142,6 +142,7 @@ FEISHU_SESSION_MODE=chat
 FEISHU_REPLY_MODE=reply
 
 FEISHU_DEFAULT_SYSTEM_PROMPT=
+FEISHU_CHANNEL_SKILL=dingtakl-feishu-cn
 FEISHU_MAX_CONCURRENCY=1
 FEISHU_DEDUPE_TTL_MS=600000
 FEISHU_INCLUDE_MESSAGE_META=true
@@ -161,6 +162,7 @@ FEISHU_STREAMING_MAX_UPDATES=20
 - `FEISHU_ENCRYPT_KEY` 用于飞书事件加密解密，第一阶段可先不启用加密。
 - `FEISHU_SESSION_MODE=chat` 时，群聊所有人共享上下文。
 - `FEISHU_SESSION_MODE=user` 时，群聊里每个用户独立上下文。
+- `FEISHU_CHANNEL_SKILL=dingtakl-feishu-cn` 时，Feishu Channel 会在该来源的 system prompt 中提示 agent 激活并使用这个 skill。
 - `FEISHU_INCLUDE_MESSAGE_META=true` 时，会把经过筛选的飞书消息元信息传给 agent，便于 agent 理解消息来源和引用关系。
 - `FEISHU_STREAMING_ENABLED=true` 时，启用飞书准流式回复。默认建议先关闭，MVP 稳定后再开启。
 - `FEISHU_STREAMING_MODE=update` 时，先发送一条占位消息，再定时编辑同一条机器人消息。
@@ -226,11 +228,24 @@ group + FEISHU_SESSION_MODE=user:
 agentService.run({
   sessionId,
   message,
-  systemPrompt,
+  systemPrompt: buildFeishuSystemPrompt(baseSystemPrompt),
   sandbox,
   model,
 })
 ```
+
+Feishu Channel 应该对 system prompt 做通道级增强，不要要求用户每次手动写提示。建议追加：
+
+```text
+## Feishu Channel Instructions
+
+This request came from the Feishu robot channel.
+Before handling Feishu-specific user requests, activate and use the `dingtakl-feishu-cn` skill when it is available.
+Use Feishu message meta such as message_id, chat_id, sender_id, and thread_id when it helps preserve context or produce a correct reply.
+Do not expose internal Feishu credentials, tokens, app secrets, verification tokens, or encrypt keys.
+```
+
+如果后续 `FEISHU_CHANNEL_SKILL` 改成其他 skill 名称，提示里的 `dingtakl-feishu-cn` 使用配置值替换。
 
 建议给消息加少量来源上下文和安全筛选后的 meta 信息：
 
@@ -622,6 +637,7 @@ MVP 先纯文本回复。原因：
 - 支持群聊 @ 机器人。
 - session 映射。
 - 幂等去重。
+- Feishu Channel system prompt 增强，提示 agent 使用 `dingtakl-feishu-cn` skill。
 - 调用 `AgentService.run(...)`。
 - 回复纯文本。
 - 更新 README 和 `.env.example`。
