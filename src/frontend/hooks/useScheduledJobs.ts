@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ScheduledExecution, ScheduledJob, SchedulerStatus } from '../types.js'
 import { wsClient } from '../ws-client.js'
 import type { WsServerMessage } from '../../ws/protocol.js'
+import { createRequestId } from '../utils/request-id.js'
 
 export function useScheduledJobs(active: boolean) {
   const [jobs, setJobs] = useState<ScheduledJob[]>([])
@@ -67,7 +68,7 @@ export function useScheduledJobs(active: boolean) {
     setLoading(true)
     const response = await wsClient.request({
       type: 'scheduler:refresh',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
     }, (message): message is Extract<WsServerMessage, { type: 'scheduler:snapshot' }> => {
       return message.type === 'scheduler:snapshot'
     })
@@ -81,7 +82,7 @@ export function useScheduledJobs(active: boolean) {
   const loadExecutions = useCallback(async (jobId: string) => {
     const response = await wsClient.request({
       type: 'scheduled-job:load-executions',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
       jobId,
     }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-executions' }> => {
       return message.type === 'scheduler:job-executions' && message.jobId === jobId
@@ -97,7 +98,7 @@ export function useScheduledJobs(active: boolean) {
   const createJob = useCallback(async (body: Record<string, unknown>) => {
     const response = await wsClient.request({
       type: 'scheduled-job:create',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
       payload: body,
     }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-created' }> => {
       return message.type === 'scheduler:job-created'
@@ -109,7 +110,7 @@ export function useScheduledJobs(active: boolean) {
   const updateJob = useCallback(async (jobId: string, body: Record<string, unknown>) => {
     const response = await wsClient.request({
       type: 'scheduled-job:update',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
       jobId,
       payload: body,
     }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-updated' }> => {
@@ -122,7 +123,7 @@ export function useScheduledJobs(active: boolean) {
   const removeJob = useCallback(async (jobId: string) => {
     await wsClient.request({
       type: 'scheduled-job:delete',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
       jobId,
     }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-deleted' }> => {
       return message.type === 'scheduler:job-deleted' && message.jobId === jobId
@@ -133,7 +134,7 @@ export function useScheduledJobs(active: boolean) {
   const runJobNow = useCallback(async (jobId: string) => {
     const response = await wsClient.request({
       type: 'scheduled-job:run',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
       jobId,
     }, (message): message is Extract<WsServerMessage, { type: 'scheduler:job-executions' }> => {
       return message.type === 'scheduler:job-executions' && message.jobId === jobId
@@ -155,7 +156,7 @@ export function useScheduledJobs(active: boolean) {
     const unsubscribe = wsClient.subscribe(handleMessage)
     const subscribe = () => wsClient.send({
       type: 'scheduler:subscribe',
-      requestId: globalThis.crypto.randomUUID(),
+      requestId: createRequestId(),
     })
     subscribe()
     const unsubscribeOpen = wsClient.onOpen(() => {

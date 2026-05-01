@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import type { Session, SessionMessage, RuntimeEvent, SessionSandboxConfig, ContextWindowState } from '../types.js'
 import { wsClient } from '../ws-client.js'
 import type { WsServerMessage } from '../../ws/protocol.js'
+import { createRequestId } from '../utils/request-id.js'
 
 interface ChatState {
   sending: boolean
@@ -119,7 +120,7 @@ export function useChat(
         payload.sandbox = sandbox
       }
 
-      const requestId = globalThis.crypto.randomUUID()
+      const requestId = createRequestId()
       requestIdRef.current = requestId
       wsClient.send({
         type: 'chat:start',
