@@ -46,7 +46,7 @@ const MARKDOWN_IMAGE_CONTENT_TYPES = new Map([
   ['.gif', 'image/gif'],
 ])
 
-const HOST = process.env.HOST || '127.0.0.1'
+const HOST = process.env.HOST || '0.0.0.0'
 const PORT = parseInteger(process.env.PORT, 3011)
 const APP_TITLE = process.env.APP_TITLE || 'Kraken Agent'
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || process.env.DEFAULT_MODEL || 'anthropic/claude-sonnet-4'
