@@ -241,27 +241,33 @@ export function createFeishuService(params: {
 
     try {
       await channel.stream(input.sourceMessage.chatId, {
-        markdown: async (controller) => {
-          if (input.sourceMessage.chatType === 'group' || params.config.replyMode === 'reply') {
-            await controller.setContent('处理中...')
-          }
-
-          while (true) {
-            const chunk = await updates.next()
-            if (chunk === null) {
-              break
+        card: {
+          initial: buildReplyCard('处理中...', { title: 'Kraken' }),
+          producer: async (controller) => {
+            if (input.sourceMessage.chatType === 'group' || params.config.replyMode === 'reply') {
+              await controller.update(buildReplyCard('处理中...', { title: 'Kraken' }))
             }
-            if (chunk.trim()) {
-              await controller.setContent(chunk)
-            }
-          }
 
-          await runPromise.catch(() => undefined)
-          if (runError) {
-            await controller.setContent(`处理失败：${runError.message}`)
-            return
-          }
-          await controller.setContent(finalReply || '已完成，但没有文本输出。')
+            while (true) {
+              const chunk = await updates.next()
+              if (chunk === null) {
+                break
+              }
+              if (chunk.trim()) {
+                await controller.update(buildReplyCard(chunk, { title: 'Kraken' }))
+              }
+            }
+
+            await runPromise.catch(() => undefined)
+            if (runError) {
+              await controller.update(buildReplyCard(`处理失败：${runError.message}`, {
+                title: 'Kraken',
+                template: 'red',
+              }))
+              return
+            }
+            await controller.update(buildReplyCard(finalReply || '已完成，但没有文本输出。', { title: 'Kraken' }))
+          },
         },
       }, buildSendOptions(
         params.config.replyMode === 'reply' ? input.sourceMessage.messageId : undefined,
@@ -277,10 +283,14 @@ export function createFeishuService(params: {
   async function replyFinal(message: FeishuIncomingMessage, text: string): Promise<void> {
     const normalized = text.trim() || '已完成，但没有文本输出。'
     if (params.config.replyMode === 'reply') {
-      await channel.send(message.chatId, { markdown: normalized }, buildSendOptions(message.messageId, message.threadId))
+      await channel.send(
+        message.chatId,
+        { card: buildReplyCard(normalized, { title: 'Kraken' }) },
+        buildSendOptions(message.messageId, message.threadId)
+      )
       return
     }
-    await channel.send(message.chatId, { markdown: normalized })
+    await channel.send(message.chatId, { card: buildReplyCard(normalized, { title: 'Kraken' }) })
   }
 
   async function addThinkingReaction(message: FeishuIncomingMessage): Promise<void> {
@@ -305,6 +315,33 @@ export function createFeishuService(params: {
         error,
       })
     }
+  }
+}
+
+function buildReplyCard(
+  content: string,
+  options: {
+    title?: string
+    template?: string
+  } = {}
+) {
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    header: {
+      template: options.template || 'blue',
+      title: {
+        tag: 'plain_text',
+        content: options.title || 'Kraken',
+      },
+    },
+    elements: [
+      {
+        tag: 'markdown',
+        content: content.trim() || '已完成，但没有文本输出。',
+      },
+    ],
   }
 }
 
