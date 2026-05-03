@@ -13,11 +13,35 @@ import type { AgentContentBlock, ContextWindowState } from '../agent/types.js'
 
 export type SessionMessageContent = string | AgentContentBlock[]
 
+export interface FeishuMessageMeta {
+  provider: 'feishu'
+  eventId?: string
+  messageId: string
+  rootMessageId?: string
+  parentMessageId?: string
+  threadId?: string
+  chatId: string
+  chatType: 'p2p' | 'group'
+  senderId: string
+  senderType?: string
+  senderName?: string
+  messageType: string
+  createTime?: string
+  conversationKey: string
+  mentionBot: boolean
+}
+
+export interface SessionMessageMeta {
+  source?: 'web' | 'feishu' | 'scheduler'
+  feishu?: FeishuMessageMeta
+}
+
 export interface SessionMessageRecord {
   id: string
   role: 'user' | 'assistant'
   content: SessionMessageContent
   createdAt: string
+  meta?: SessionMessageMeta | undefined
 }
 
 export interface SessionRecord {
@@ -198,7 +222,87 @@ function normalizeMessageRecord(value: unknown): SessionMessageRecord | null {
     createdAt: typeof record.createdAt === 'string' && record.createdAt
       ? record.createdAt
       : new Date().toISOString(),
+    meta: normalizeMessageMeta(record.meta),
   }
+}
+
+function normalizeMessageMeta(value: unknown): SessionMessageMeta | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const meta: SessionMessageMeta = {}
+
+  if (record.source === 'web' || record.source === 'feishu' || record.source === 'scheduler') {
+    meta.source = record.source
+  }
+
+  if (record.feishu && typeof record.feishu === 'object') {
+    const feishu = normalizeFeishuMessageMeta(record.feishu)
+    if (feishu) {
+      meta.feishu = feishu
+    }
+  }
+
+  if (!meta.source && !meta.feishu) {
+    return undefined
+  }
+
+  return meta
+}
+
+function normalizeFeishuMessageMeta(value: unknown): FeishuMessageMeta | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const messageId = typeof record.messageId === 'string' ? record.messageId.trim() : ''
+  const chatId = typeof record.chatId === 'string' ? record.chatId.trim() : ''
+  const senderId = typeof record.senderId === 'string' ? record.senderId.trim() : ''
+  const conversationKey = typeof record.conversationKey === 'string' ? record.conversationKey.trim() : ''
+  const messageType = typeof record.messageType === 'string' ? record.messageType.trim() : ''
+  const chatType = record.chatType === 'group' ? 'group' : record.chatType === 'p2p' ? 'p2p' : null
+
+  if (!messageId || !chatId || !senderId || !conversationKey || !messageType || !chatType) {
+    return undefined
+  }
+
+  const meta: FeishuMessageMeta = {
+    provider: 'feishu',
+    messageId,
+    chatId,
+    chatType,
+    senderId,
+    messageType,
+    conversationKey,
+    mentionBot: Boolean(record.mentionBot),
+  }
+
+  if (typeof record.eventId === 'string' && record.eventId.trim()) {
+    meta.eventId = record.eventId.trim()
+  }
+  if (typeof record.rootMessageId === 'string' && record.rootMessageId.trim()) {
+    meta.rootMessageId = record.rootMessageId.trim()
+  }
+  if (typeof record.parentMessageId === 'string' && record.parentMessageId.trim()) {
+    meta.parentMessageId = record.parentMessageId.trim()
+  }
+  if (typeof record.threadId === 'string' && record.threadId.trim()) {
+    meta.threadId = record.threadId.trim()
+  }
+  if (typeof record.senderType === 'string' && record.senderType.trim()) {
+    meta.senderType = record.senderType.trim()
+  }
+  if (typeof record.senderName === 'string' && record.senderName.trim()) {
+    meta.senderName = record.senderName.trim()
+  }
+  if (typeof record.createTime === 'string' && record.createTime.trim()) {
+    meta.createTime = record.createTime.trim()
+  }
+
+  return meta
 }
 
 function normalizeMessageContent(value: unknown): SessionMessageContent | null {

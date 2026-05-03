@@ -30,6 +30,8 @@ import { createWsHub } from './ws/hub.js'
 import type { WsClientMessage, WsServerMessage } from './ws/protocol.js'
 import { isWsClientMessage } from './ws/protocol.js'
 import { createWorkspaceBrowserService } from './workspace/browser.js'
+import { readFeishuConfig, validateFeishuConfig } from './integrations/feishu/config.js'
+import { createFeishuService } from './integrations/feishu/service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -79,6 +81,7 @@ const CONFIGURED = Boolean(process.env.OPENROUTER_API_KEY)
 const SCHEDULER_ENABLED = parseBoolean(process.env.SCHEDULER_ENABLED, true)
 const SCHEDULER_POLL_INTERVAL_MS = parseInteger(process.env.SCHEDULER_POLL_INTERVAL_MS, 300000)
 const SCHEDULER_MAX_CONCURRENCY = parseInteger(process.env.SCHEDULER_MAX_CONCURRENCY, 1)
+const FEISHU_CONFIG = readFeishuConfig(process.env)
 
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
   .split(',')
@@ -155,6 +158,16 @@ const schedulerService = createSchedulerService({
       job,
     })
   },
+})
+
+const feishuService = createFeishuService({
+  rootDir: ROOT_DIR,
+  config: FEISHU_CONFIG,
+  sessionStore,
+  agentRunner: agentService,
+  defaultModel: DEFAULT_MODEL,
+  defaultSystemPrompt: BASE_SYSTEM_PROMPT,
+  logger: console,
 })
 
 const app = express()
@@ -568,9 +581,28 @@ server.listen(PORT, HOST, () => {
 })
 
 void schedulerService.start()
+void startFeishu()
 
 function normalizeSystemPrompt(systemPrompt: string | undefined): string {
   return agentService.normalizeSystemPrompt(systemPrompt)
+}
+
+async function startFeishu() {
+  const errors = validateFeishuConfig(FEISHU_CONFIG)
+  if (errors.length > 0) {
+    for (const error of errors) {
+      console.error(`[feishu] ${error}`)
+    }
+    return
+  }
+  if (!FEISHU_CONFIG.enabled) {
+    return
+  }
+  try {
+    await feishuService.start()
+  } catch (error) {
+    console.error('[feishu] failed to start', error)
+  }
 }
 
 function normalizeAgentBrowserAllowedDomains(value: string | undefined): string | undefined {

@@ -40,7 +40,10 @@ pnpm-debug.log*
 
 # Runtime data
 .sessions/
+.feishu-sessions/
 .scheduled-jobs/
 .scheduled-jobs/executions/
 .scheduled-jobs/logs/
 package-lock.json
+
+.feishu-sessions/**
