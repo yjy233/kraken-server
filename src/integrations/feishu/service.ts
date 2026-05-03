@@ -8,6 +8,8 @@ import { createFeishuDedupeStore } from './dedupe-store.js'
 import { createFeishuSessionMap } from './session-map.js'
 import type { FeishuConfig, FeishuConversationBinding, FeishuIncomingMessage } from './types.js'
 
+const THINKING_REACTION_EMOJI = 'THINKING' // 🤔
+
 export function createFeishuService(params: {
   rootDir: string
   config: FeishuConfig
@@ -128,31 +130,37 @@ export function createFeishuService(params: {
     const systemPromptSuffix = buildFeishuSystemPromptSuffix(params.config)
     const messageMeta = buildSessionMessageMeta(params.config, feishuMeta)
 
-    if (params.config.streamingEnabled && params.config.streamingMode === 'update') {
-      await streamReply({
-        binding,
-        sourceMessage: message,
-        userMessage,
+    await addThinkingReaction(message)
+
+    try {
+      if (params.config.streamingEnabled && params.config.streamingMode === 'update') {
+        await streamReply({
+          binding,
+          sourceMessage: message,
+          userMessage,
+          systemPrompt: effectiveSystemPrompt,
+          systemPromptSuffix,
+          messageMeta,
+        })
+        return
+      }
+
+      const runInput: Parameters<typeof params.agentRunner.run>[0] = {
+        sessionId: binding.sessionId,
+        message: userMessage,
         systemPrompt: effectiveSystemPrompt,
         systemPromptSuffix,
-        messageMeta,
-      })
-      return
-    }
+        title: normalizedContent,
+      }
+      if (messageMeta) {
+        runInput.messageMeta = messageMeta
+      }
+      const result = await params.agentRunner.run(runInput, null)
 
-    const runInput: Parameters<typeof params.agentRunner.run>[0] = {
-      sessionId: binding.sessionId,
-      message: userMessage,
-      systemPrompt: effectiveSystemPrompt,
-      systemPromptSuffix,
-      title: normalizedContent,
+      await replyFinal(message, result.reply)
+    } finally {
+      await removeThinkingReaction(message)
     }
-    if (messageMeta) {
-      runInput.messageMeta = messageMeta
-    }
-    const result = await params.agentRunner.run(runInput, null)
-
-    await replyFinal(message, result.reply)
   }
 
   async function ensureSessionBinding(conversationKey: string, firstMessage: string): Promise<FeishuConversationBinding> {
@@ -273,6 +281,30 @@ export function createFeishuService(params: {
       return
     }
     await channel.send(message.chatId, { markdown: normalized })
+  }
+
+  async function addThinkingReaction(message: FeishuIncomingMessage): Promise<void> {
+    try {
+      await channel.addReaction(message.messageId, THINKING_REACTION_EMOJI)
+    } catch (error) {
+      logger.warn('[feishu] failed to add thinking reaction', {
+        messageId: message.messageId,
+        emoji: THINKING_REACTION_EMOJI,
+        error,
+      })
+    }
+  }
+
+  async function removeThinkingReaction(message: FeishuIncomingMessage): Promise<void> {
+    try {
+      await channel.removeReactionByEmoji(message.messageId, THINKING_REACTION_EMOJI)
+    } catch (error) {
+      logger.warn('[feishu] failed to remove thinking reaction', {
+        messageId: message.messageId,
+        emoji: THINKING_REACTION_EMOJI,
+        error,
+      })
+    }
   }
 }
 
