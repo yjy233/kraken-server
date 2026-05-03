@@ -12,6 +12,7 @@ Kraken Agent is a local AI assistant with tool-use capabilities. It connects to 
 - **Streaming UI** — Real-time SSE response with tool execution traces
 - **Session Management** — Persistent JSON-based conversation history
 - **Tool System** — File operations, shell commands, web search, code editing, and more
+- **Feishu Robot Channel** — Long-connection Feishu app bot access that reuses the same agent runtime
 - **Dynamic System Prompt** — Automatically generated based on enabled tools
 
 ## Tech Stack
@@ -45,6 +46,57 @@ Tools are controlled via environment variables in `.env`:
 - `ALLOW_SHELL_TOOL` — Enable shell command execution (`true`/`false`)
 - `ALLOW_FILE_WRITE_TOOL` — Enable file modification (`true`/`false`)
 - `ALLOW_AGENT_BROWSER` — Enable real browser automation through `agent-browser` (`true`/`false`)
+
+## Feishu Robot
+
+Kraken can connect to a Feishu self-built app bot through Feishu long connection mode. This lets users talk to the same agent runtime from Feishu private chats and group chats.
+
+Current scope:
+
+- Long connection / websocket mode only
+- Text messages only
+- Group chats require `@` mentioning the bot
+- Feishu message meta such as `message_id`, `chat_id`, and `sender_id` is passed to the agent
+- The Feishu channel prompt tells the agent to use `dingtakl-feishu-cn` when available
+
+HTTP callback is not part of the current setup and is not documented here.
+
+1. Create a Feishu self-built app and enable bot capability.
+2. Subscribe to the `im.message.receive_v1` event.
+3. Grant the app permissions for receiving bot messages, reading message content, sending messages, and replying to messages.
+4. Fill in the Feishu env vars in `.env`.
+5. Start Kraken. The Feishu channel will connect automatically during server startup.
+
+Example `.env`:
+
+```bash
+FEISHU_ENABLED=true
+FEISHU_EVENT_MODE=ws
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
+
+# Optional
+FEISHU_SESSION_MODE=chat
+FEISHU_REPLY_MODE=reply
+FEISHU_CHANNEL_SKILL=dingtakl-feishu-cn
+FEISHU_INCLUDE_MESSAGE_META=true
+
+# Optional quasi-streaming reply updates
+FEISHU_STREAMING_ENABLED=false
+FEISHU_STREAMING_MODE=update
+FEISHU_STREAMING_FLUSH_INTERVAL_MS=1500
+FEISHU_STREAMING_MIN_DELTA_CHARS=80
+FEISHU_STREAMING_MAX_UPDATES=20
+```
+
+Notes:
+
+- `FEISHU_SESSION_MODE=chat` shares one Kraken session per group chat; `user` isolates by sender within a group.
+- `FEISHU_REPLY_MODE=reply` replies to the source message; `send` sends a new message into the chat.
+- `FEISHU_CHANNEL_SKILL` defaults to `dingtakl-feishu-cn`.
+- Session mappings and dedupe state are persisted under `.feishu-sessions/`.
+
+More design detail is in [docs/feishu-robot-integration.md](/Users/bill/code/kraken-server/docs/feishu-robot-integration.md).
 
 ## Agent Browser Setup
 

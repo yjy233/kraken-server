@@ -16,7 +16,7 @@ import {
   isRecord,
   sanitizeTitle,
 } from '../utils/helpers.js'
-import type { SessionMessageRecord, SessionRecord } from './session-store.js'
+import type { SessionMessageMeta, SessionMessageRecord, SessionRecord } from './session-store.js'
 import { prepareContextWindow, type ContextCompressionConfig } from './context-window.js'
 
 export interface AgentServiceConfig {
@@ -48,6 +48,7 @@ export interface AgentServiceConfig {
 export interface RunAgentServiceRequest {
   sessionId?: string | null
   systemPrompt?: string
+  systemPromptSuffix?: string
   message: string
   model?: string
   sandbox?: SessionSandboxConfig | undefined
@@ -55,6 +56,7 @@ export interface RunAgentServiceRequest {
   createNewSession?: boolean
   forceSessionId?: string | undefined
   title?: string
+  messageMeta?: SessionMessageMeta | undefined
 }
 
 export interface RunAgentServiceResult {
@@ -117,6 +119,9 @@ export function createAgentService(config: AgentServiceConfig) {
     }
     if (typeof payload.systemPrompt === 'string') {
       request.systemPrompt = payload.systemPrompt
+    }
+    if (typeof payload.systemPromptSuffix === 'string' && payload.systemPromptSuffix.trim()) {
+      request.systemPromptSuffix = payload.systemPromptSuffix.trim()
     }
     if (typeof payload.model === 'string' && payload.model.trim()) {
       request.model = payload.model.trim()
@@ -211,6 +216,7 @@ export function createAgentService(config: AgentServiceConfig) {
       role: 'user',
       content: rawMessage,
       createdAt: new Date().toISOString(),
+      meta: input.messageMeta,
     }
     session.messages.push(userMessage)
     session.updatedAt = new Date().toISOString()
@@ -223,7 +229,8 @@ export function createAgentService(config: AgentServiceConfig) {
       state: 'started',
     })
 
-    const runtimeSystemPrompt = buildRuntimeSystemPrompt(session.systemPrompt, toolRegistry, sandboxPolicy)
+    const effectiveSystemPrompt = appendSystemPromptSuffix(session.systemPrompt, input.systemPromptSuffix)
+    const runtimeSystemPrompt = buildRuntimeSystemPrompt(effectiveSystemPrompt, toolRegistry, sandboxPolicy)
     const contextMessages = session.messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -292,4 +299,12 @@ export function createAgentService(config: AgentServiceConfig) {
     normalizeSystemPrompt,
     buildSystemPrompt,
   }
+}
+
+function appendSystemPromptSuffix(basePrompt: string, suffix: string | undefined): string {
+  const trimmedSuffix = String(suffix || '').trim()
+  if (!trimmedSuffix) {
+    return basePrompt
+  }
+  return `${basePrompt.trim()}\n\n${trimmedSuffix}`
 }
