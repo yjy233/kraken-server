@@ -1,13 +1,14 @@
 ---
 name: feishu-docx-powerwrite
-description: High-quality Feishu/Lark Docx writing via OpenClaw. Use when you want to turn Markdown into well-formatted Feishu Docx (headings, lists, nesting, code blocks) using feishu_docx_write_markdown; includes safe workflows, templates, and troubleshooting. Trigger on Feishu doc/docx links, “write to Feishu doc”, “generate a Feishu doc”, “append/replace docx”, “convert markdown to feishu doc”, or when users want consistently good doc formatting.
+description: 用 JS 脚本把 Markdown 写入飞书新版文档，自动从 dotenv 读取 FEISHU_APP_ID/FEISHU_APP_SECRET，支持新建文档和向现有文档追加内容。
 ---
 
 # Feishu Docx PowerWrite
 
-This skill focuses on **reliably writing great-looking Feishu Docx** using OpenClaw’s Feishu OpenAPI tools.
+This skill focuses on **reliably writing Feishu Docx with bundled Node.js scripts**.
 
-Key idea: prefer **`feishu_docx_write_markdown`** (Markdown → Docx blocks) for structure-preserving output.
+Key idea: prefer the bundled JS scripts over ad hoc API code or manual copy-paste.
+The scripts now do chunked writing with fallback handling for markdown tables and problematic ASCII diagrams, so they are safer than a single `convert` call.
 
 ## Quick workflow
 
@@ -21,6 +22,44 @@ Key idea: prefer **`feishu_docx_write_markdown`** (Markdown → Docx blocks) for
 3) Write markdown
 - Use headings + lists + short paragraphs
 - Avoid huge single paragraphs (harder to read)
+
+## Built-in scripts
+
+### Create a new doc from Markdown
+
+```bash
+node scripts/create_doc_from_markdown.js --title "Hermes Agent 自进化" --path ./docs/hermes-agent/self-evolution-doc.md
+```
+
+Optional:
+
+```bash
+node scripts/create_doc_from_markdown.js --title "Hermes Agent 自进化" --path ./docs/hermes-agent/self-evolution-doc.md --folder-token fldcnxxxx
+```
+
+### Append Markdown into an existing doc
+
+```bash
+node scripts/write_markdown_to_doc.js --document-id doccnxxxx --path ./docs/hermes-agent/self-evolution-doc.md
+```
+
+These scripts automatically load:
+
+- repository root `.env`
+- repository root `.env.local`
+
+Required env:
+
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+
+## Reliability behavior
+
+- Large markdown is split into smaller chunks before convert/write.
+- Markdown tables are downgraded into bullet-style text before sending to Feishu convert.
+- Box-drawing / ASCII flowchart content is downgraded into plain text bullet lines if needed.
+- If one chunk still fails, the script retries with smaller chunks instead of aborting the whole document.
+- Final JSON output includes `failedChunks` so remaining incompatible content can be diagnosed precisely.
 
 ## Recommended defaults
 
@@ -82,3 +121,4 @@ openclaw skills check
 
 - Never hardcode tokens, chat_id, open_id, or document links inside this skill.
 - Always use the user’s own Feishu app credentials and scopes.
+- If writing fails because of permission or credential problems, report the exact API failure clearly instead of silently falling back to “manual copy”.
