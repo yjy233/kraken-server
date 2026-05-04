@@ -3,10 +3,11 @@ import { createLarkChannel, type LarkChannel, type NormalizedMessage } from '@la
 import type { SessionSandboxConfig } from '../../tools/types.js'
 import type { SessionRecord } from '../../runtime/session-store.js'
 import type { RunAgentServiceResult } from '../../runtime/agent-service.js'
-import { buildAgentVisibleMessage, buildConversationKey, buildFeishuMessageMeta, buildFeishuSystemPromptSuffix, buildSessionMessageMeta, normalizeIncomingContent } from './adapter.js'
+import { truncate } from '../../utils/helpers.js'
+import { buildAgentVisibleMessage, buildConversationKey, buildFeishuMessageMeta, buildFeishuSystemPromptSuffix, buildReplyTargetContext, buildSessionMessageMeta, normalizeIncomingContent } from './adapter.js'
 import { createFeishuDedupeStore } from './dedupe-store.js'
 import { createFeishuSessionMap } from './session-map.js'
-import type { FeishuConfig, FeishuConversationBinding, FeishuIncomingMessage } from './types.js'
+import type { FeishuConfig, FeishuConversationBinding, FeishuIncomingMessage, FeishuResourceDescriptor } from './types.js'
 
 const THINKING_REACTION_EMOJI = 'THINKING' // 🤔
 
@@ -101,15 +102,12 @@ export function createFeishuService(params: {
   }
 
   async function handleMessage(message: FeishuIncomingMessage): Promise<void> {
-    if (message.rawContentType !== 'text') {
-      return
-    }
     if (message.chatType === 'group' && !message.mentionedBot) {
       return
     }
 
     const normalizedContent = normalizeIncomingContent(message.content)
-    if (!normalizedContent) {
+    if (!normalizedContent && message.resources.length === 0) {
       return
     }
 
@@ -122,10 +120,15 @@ export function createFeishuService(params: {
     const conversationKey = buildConversationKey(params.config, message)
     const binding = await ensureSessionBinding(conversationKey, normalizedContent)
     const feishuMeta = buildFeishuMessageMeta(conversationKey, message)
-    const userMessage = buildAgentVisibleMessage({
+    const visibleMessage = buildAgentVisibleMessage({
       ...message,
       content: normalizedContent,
     }, feishuMeta)
+    const replyTarget = await loadReplyTargetMessage(message)
+    const replyTargetContext = replyTarget ? buildReplyTargetContext(replyTarget) : ''
+    const userMessage = replyTargetContext
+      ? `${replyTargetContext}\n\n${visibleMessage}`
+      : visibleMessage
     const effectiveSystemPrompt = params.config.defaultSystemPrompt || params.defaultSystemPrompt
     const systemPromptSuffix = buildFeishuSystemPromptSuffix(params.config)
     const messageMeta = buildSessionMessageMeta(params.config, feishuMeta)
@@ -155,7 +158,7 @@ export function createFeishuService(params: {
       if (messageMeta) {
         runInput.messageMeta = messageMeta
       }
-      const result = await params.agentRunner.run(runInput, null)
+      const result = await params.agentRunner.run(runInput, createFeishuToolEventEmitter(message))
 
       await replyFinal(message, result.reply)
     } finally {
@@ -187,6 +190,49 @@ export function createFeishuService(params: {
     return created
   }
 
+  async function loadReplyTargetMessage(message: FeishuIncomingMessage): Promise<FeishuIncomingMessage | null> {
+    if (!message.replyToMessageId) {
+      return null
+    }
+
+    try {
+      const response = await channel.rawClient.im.v1.message.get({
+        path: {
+          message_id: message.replyToMessageId,
+        },
+      })
+
+      const items = Array.isArray(response?.data?.items) ? response.data.items : []
+      const matched = items.find((item) => {
+        const messageId = typeof item?.message_id === 'string' ? item.message_id.trim() : ''
+        return messageId === message.replyToMessageId
+      }) || items[0]
+
+      if (!matched) {
+        return null
+      }
+
+      return normalizeReplyTargetMessage(message, matched as {
+        message_id?: string | undefined
+        root_id?: string | undefined
+        parent_id?: string | undefined
+        thread_id?: string | undefined
+        create_time?: string | undefined
+        msg_type?: string | undefined
+        body?: {
+          content?: string | undefined
+        } | undefined
+      })
+    } catch (error) {
+      logger.warn('[feishu] failed to load reply target message', {
+        messageId: message.messageId,
+        replyToMessageId: message.replyToMessageId,
+        error,
+      })
+      return null
+    }
+  }
+
   async function streamReply(input: {
     binding: FeishuConversationBinding
     sourceMessage: FeishuIncomingMessage
@@ -214,7 +260,7 @@ export function createFeishuService(params: {
       runInput.messageMeta = input.messageMeta
     }
 
-    const runPromise = params.agentRunner.run(runInput, (event, data) => {
+    const emit = createFeishuToolEventEmitter(input.sourceMessage, (event, data) => {
       if (event !== 'assistant:delta') {
         return
       }
@@ -229,7 +275,9 @@ export function createFeishuService(params: {
         updateCount += 1
         updates.push(text)
       }
-    }).then((result) => {
+    })
+
+    const runPromise = params.agentRunner.run(runInput, emit).then((result) => {
       finalReply = result.reply
       updates.finish()
       return result
@@ -316,6 +364,134 @@ export function createFeishuService(params: {
       })
     }
   }
+
+  function createFeishuToolEventEmitter(
+    message: FeishuIncomingMessage,
+    onEvent?: ((event: string, data: unknown) => void) | undefined
+  ) {
+    const announcedToolUseIds = new Set<string>()
+    const completedToolUseIds = new Set<string>()
+
+    return (event: string, data: unknown) => {
+      onEvent?.(event, data)
+
+      if (!data || typeof data !== 'object') {
+        return
+      }
+
+      if (event === 'tool:requested') {
+        const payload = data as {
+          toolUse?: {
+            id?: string
+            name?: string
+            input?: Record<string, unknown>
+          }
+        }
+        const toolUseId = typeof payload.toolUse?.id === 'string' ? payload.toolUse.id : ''
+        const toolName = typeof payload.toolUse?.name === 'string' ? payload.toolUse.name : 'unknown_tool'
+        if (!toolUseId || announcedToolUseIds.has(toolUseId)) {
+          return
+        }
+        announcedToolUseIds.add(toolUseId)
+
+        const inputPreview = formatToolInputPreview(toolName, payload.toolUse?.input)
+        void sendFeishuToolStatusMessage(
+          message,
+          `🔧 调用工具：\`${toolName}\`${inputPreview ? `\n${inputPreview}` : ''}`
+        )
+        return
+      }
+
+      if (event === 'tool:result') {
+        const payload = data as {
+          toolUseId?: string
+          toolName?: string
+          output?: string
+          outputPreview?: string
+          isError?: boolean
+        }
+        const toolUseId = typeof payload.toolUseId === 'string' ? payload.toolUseId : ''
+        if (!toolUseId || completedToolUseIds.has(toolUseId)) {
+          return
+        }
+        completedToolUseIds.add(toolUseId)
+
+        const toolName = typeof payload.toolName === 'string' ? payload.toolName : 'unknown_tool'
+        const body = typeof payload.output === 'string' && payload.output.trim()
+          ? payload.output
+          : typeof payload.outputPreview === 'string'
+            ? payload.outputPreview
+            : ''
+        const prefix = payload.isError ? '❌ 工具失败' : '✅ 工具完成'
+        const preview = body ? `\n\n\`\`\`\n${truncate(body, 1200)}\n\`\`\`` : ''
+        void sendFeishuToolStatusMessage(message, `${prefix}：\`${toolName}\`${preview}`)
+      }
+    }
+  }
+
+  async function sendFeishuToolStatusMessage(message: FeishuIncomingMessage, text: string): Promise<void> {
+    const normalized = text.trim()
+    if (!normalized) {
+      return
+    }
+    try {
+      await channel.send(
+        message.chatId,
+        {
+          card: buildReplyCard(limitCardTextLines(normalized, 6), {
+            title: 'tools call',
+            template: 'grey',
+          }),
+        },
+        buildSendOptions(undefined, message.threadId)
+      )
+    } catch (error) {
+      logger.warn('[feishu] failed to send tool status message', {
+        messageId: message.messageId,
+        error,
+      })
+    }
+  }
+}
+
+function formatToolInputPreview(toolName: string, input: Record<string, unknown> | undefined): string {
+  if (!input) {
+    return ''
+  }
+  switch (toolName) {
+    case 'shell_command':
+      return input.command ? `命令：\`${String(input.command)}\`` : ''
+    case 'read_file':
+    case 'write_file':
+      return input.path ? `路径：\`${String(input.path)}\`` : ''
+    case 'agent_browser': {
+      const parts = [
+        input.action ? String(input.action) : '',
+        input.url ? String(input.url) : '',
+        input.ref ? String(input.ref) : '',
+        input.selector ? String(input.selector) : '',
+      ].filter(Boolean)
+      return parts.length > 0 ? `参数：\`${parts.join(' ')}\`` : ''
+    }
+    default:
+      return ''
+  }
+}
+
+function limitCardTextLines(text: string, maxLines: number): string {
+  if (maxLines <= 0) {
+    return ''
+  }
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+$/g, ''))
+
+  if (lines.length <= maxLines) {
+    return lines.join('\n').trim()
+  }
+
+  return lines.slice(0, maxLines).join('\n').trim()
 }
 
 function buildReplyCard(
@@ -353,6 +529,7 @@ function normalizeMessage(message: NormalizedMessage): FeishuIncomingMessage {
     senderId: message.senderId,
     content: message.content,
     rawContentType: message.rawContentType,
+    resources: normalizeResources(message.resources),
     mentionedBot: message.mentionedBot,
   }
   if (message.senderName) {
@@ -378,6 +555,208 @@ function normalizeMessage(message: NormalizedMessage): FeishuIncomingMessage {
     incoming.eventId = eventId
   }
   return incoming
+}
+
+function normalizeReplyTargetMessage(
+  currentMessage: FeishuIncomingMessage,
+  rawItem: {
+    message_id?: string | undefined
+    root_id?: string | undefined
+    parent_id?: string | undefined
+    thread_id?: string | undefined
+    create_time?: string | undefined
+    msg_type?: string | undefined
+    body?: {
+      content?: string | undefined
+    } | undefined
+  }
+): FeishuIncomingMessage | null {
+  const messageId = typeof rawItem.message_id === 'string' ? rawItem.message_id.trim() : ''
+  const rawContentType = typeof rawItem.msg_type === 'string' ? rawItem.msg_type.trim() : ''
+  if (!messageId || !rawContentType) {
+    return null
+  }
+
+  const content = typeof rawItem.body?.content === 'string' ? rawItem.body.content : ''
+  const normalizedMessage = normalizeFeishuRawContent(content, rawContentType)
+
+  const replyTarget: FeishuIncomingMessage = {
+    messageId,
+    chatId: currentMessage.chatId,
+    chatType: currentMessage.chatType,
+    senderId: currentMessage.senderId,
+    content: normalizedMessage.content,
+    rawContentType,
+    resources: normalizedMessage.resources,
+    mentionedBot: false,
+  }
+
+  if (currentMessage.senderName) {
+    replyTarget.senderName = currentMessage.senderName
+  }
+  if (currentMessage.senderType) {
+    replyTarget.senderType = currentMessage.senderType
+  }
+
+  if (typeof rawItem.root_id === 'string' && rawItem.root_id.trim()) {
+    replyTarget.rootId = rawItem.root_id.trim()
+  }
+  if (typeof rawItem.parent_id === 'string' && rawItem.parent_id.trim()) {
+    replyTarget.replyToMessageId = rawItem.parent_id.trim()
+  }
+  if (typeof rawItem.thread_id === 'string' && rawItem.thread_id.trim()) {
+    replyTarget.threadId = rawItem.thread_id.trim()
+  }
+  if (typeof rawItem.create_time === 'string' && rawItem.create_time.trim()) {
+    const parsed = Number.parseInt(rawItem.create_time, 10)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      replyTarget.createTime = new Date(parsed).toISOString()
+    }
+  }
+
+  return replyTarget
+}
+
+function normalizeFeishuRawContent(
+  rawContent: string,
+  rawContentType: string
+): {
+  content: string
+  resources: FeishuResourceDescriptor[]
+} {
+  const parsed = safeParseJson(rawContent)
+
+  if (rawContentType === 'image') {
+    const imageKey = typeof parsed?.image_key === 'string' ? parsed.image_key.trim() : ''
+    return {
+      content: imageKey ? '[image]' : '',
+      resources: imageKey
+        ? [{ type: 'image', fileKey: imageKey }]
+        : [],
+    }
+  }
+
+  if (rawContentType === 'file') {
+    const fileKey = typeof parsed?.file_key === 'string' ? parsed.file_key.trim() : ''
+    const fileName = typeof parsed?.file_name === 'string' ? parsed.file_name.trim() : ''
+    return {
+      content: fileName || '[file]',
+      resources: fileKey
+        ? [{
+          type: 'file',
+          fileKey,
+          ...(fileName ? { fileName } : {}),
+        }]
+        : [],
+    }
+  }
+
+  if (rawContentType === 'audio') {
+    const fileKey = typeof parsed?.file_key === 'string' ? parsed.file_key.trim() : ''
+    const durationMs = typeof parsed?.duration === 'number' ? parsed.duration : undefined
+    return {
+      content: '[audio]',
+      resources: fileKey
+        ? [{
+          type: 'audio',
+          fileKey,
+          ...(typeof durationMs === 'number' ? { durationMs } : {}),
+        }]
+        : [],
+    }
+  }
+
+  if (rawContentType === 'media') {
+    const fileKey = typeof parsed?.file_key === 'string' ? parsed.file_key.trim() : ''
+    const durationMs = typeof parsed?.duration === 'number' ? parsed.duration : undefined
+    const coverImageKey = typeof parsed?.image_key === 'string' ? parsed.image_key.trim() : ''
+    return {
+      content: '[video]',
+      resources: fileKey
+        ? [{
+          type: 'video',
+          fileKey,
+          ...(typeof durationMs === 'number' ? { durationMs } : {}),
+          ...(coverImageKey ? { coverImageKey } : {}),
+        }]
+        : [],
+    }
+  }
+
+  if (rawContentType === 'sticker') {
+    const fileKey = typeof parsed?.file_key === 'string' ? parsed.file_key.trim() : ''
+    return {
+      content: '[sticker]',
+      resources: fileKey
+        ? [{ type: 'sticker', fileKey }]
+        : [],
+    }
+  }
+
+  if (typeof parsed?.text === 'string') {
+    return {
+      content: parsed.text,
+      resources: [],
+    }
+  }
+
+  return {
+    content: typeof rawContent === 'string' ? rawContent : '',
+    resources: [],
+  }
+}
+
+function safeParseJson(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function normalizeResources(resources: NormalizedMessage['resources'] | undefined): FeishuResourceDescriptor[] {
+  if (!Array.isArray(resources)) {
+    return []
+  }
+
+  return resources
+    .map((resource) => {
+      if (!resource || typeof resource !== 'object') {
+        return null
+      }
+      if (
+        resource.type !== 'image' &&
+        resource.type !== 'file' &&
+        resource.type !== 'audio' &&
+        resource.type !== 'video' &&
+        resource.type !== 'sticker'
+      ) {
+        return null
+      }
+      const fileKey = typeof resource.fileKey === 'string' ? resource.fileKey.trim() : ''
+      if (!fileKey) {
+        return null
+      }
+      const normalized: FeishuResourceDescriptor = {
+        type: resource.type,
+        fileKey,
+      }
+      if (typeof resource.fileName === 'string' && resource.fileName.trim()) {
+        normalized.fileName = resource.fileName.trim()
+      }
+      if (typeof resource.durationMs === 'number' && Number.isFinite(resource.durationMs)) {
+        normalized.durationMs = resource.durationMs
+      }
+      if (typeof resource.coverImageKey === 'string' && resource.coverImageKey.trim()) {
+        normalized.coverImageKey = resource.coverImageKey.trim()
+      }
+      return normalized
+    })
+    .filter((resource): resource is FeishuResourceDescriptor => Boolean(resource))
 }
 
 function extractEventId(raw: unknown): string | undefined {

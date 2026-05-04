@@ -3,7 +3,6 @@
  * 被 server、tools、agent 等多个模块共享。
  */
 
-import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -64,38 +63,6 @@ export function expandHomePath(inputPath: string): string {
   if (value === '~') return os.homedir()
   if (value.startsWith('~/')) {
     return path.join(os.homedir(), value.slice(2))
-  }
-  return value
-}
-
-/** 加载 .env 文件到 process.env（不会覆盖已有环境变量） */
-export function loadDotEnv(filePath: string): void {
-  if (!existsSync(filePath)) {
-    return
-  }
-  const file = readFileSync(filePath, 'utf8')
-  for (const rawLine of file.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith('#')) {
-      continue
-    }
-    const separatorIndex = line.indexOf('=')
-    if (separatorIndex === -1) {
-      continue
-    }
-    const key = line.slice(0, separatorIndex).trim()
-    const value = stripWrappedQuotes(line.slice(separatorIndex + 1).trim())
-    if (key && process.env[key] === undefined) {
-      process.env[key] = value
-    }
-  }
-}
-
-/** 去掉字符串首尾的单双引号包裹 */
-function stripWrappedQuotes(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1)
   }
   return value
 }

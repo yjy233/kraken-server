@@ -5,10 +5,11 @@
 
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { loadDotEnv } from './utils/helpers.js'
+import { config as loadDotEnv } from 'dotenv'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, '..')
 
-loadDotEnv(path.join(ROOT_DIR, '.env'))
+loadDotEnv({ path: path.join(ROOT_DIR, '.env') })
+loadDotEnv({ path: path.join(ROOT_DIR, '.env.local'), override: true })

@@ -46,6 +46,7 @@ export interface FeishuIncomingMessage {
   senderType?: string
   content: string
   rawContentType: string
+  resources: FeishuResourceDescriptor[]
   mentionedBot: boolean
   rootId?: string
   threadId?: string
@@ -53,6 +54,14 @@ export interface FeishuIncomingMessage {
   createTime?: string
   eventId?: string
   raw?: unknown
+}
+
+export interface FeishuResourceDescriptor {
+  type: 'image' | 'file' | 'audio' | 'video' | 'sticker'
+  fileKey: string
+  fileName?: string
+  durationMs?: number
+  coverImageKey?: string
 }
 
 export interface FeishuReplyStreamState {
