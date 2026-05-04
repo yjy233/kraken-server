@@ -10,6 +10,7 @@ import { createFeishuSessionMap } from './session-map.js'
 import type { FeishuConfig, FeishuConversationBinding, FeishuIncomingMessage, FeishuResourceDescriptor } from './types.js'
 
 const THINKING_REACTION_EMOJI = 'THINKING' // 🤔
+const NEW_SESSION_COMMAND = '/new_session'
 
 export function createFeishuService(params: {
   rootDir: string
@@ -118,6 +119,11 @@ export function createFeishuService(params: {
     await dedupeStore.remember(dedupeKey)
 
     const conversationKey = buildConversationKey(params.config, message)
+    const handled = await handleConversationControlCommand(message, conversationKey, normalizedContent)
+    if (handled) {
+      return
+    }
+
     const binding = await ensureSessionBinding(conversationKey, normalizedContent)
     const feishuMeta = buildFeishuMessageMeta(conversationKey, message)
     const visibleMessage = buildAgentVisibleMessage({
@@ -188,6 +194,57 @@ export function createFeishuService(params: {
     }
     await sessionMap.set(conversationKey, created)
     return created
+  }
+
+  async function handleConversationControlCommand(
+    message: FeishuIncomingMessage,
+    conversationKey: string,
+    normalizedContent: string
+  ): Promise<boolean> {
+    const command = parseConversationControlCommand(normalizedContent)
+    if (!command) {
+      return false
+    }
+
+    if (command.type !== 'new_session') {
+      return false
+    }
+
+    const previousBinding = await sessionMap.get(conversationKey)
+    const title = command.title || 'New Feishu session'
+    const session = params.sessionStore.createSession({
+      title,
+      systemPrompt: params.config.defaultSystemPrompt || params.defaultSystemPrompt,
+      model: params.defaultModel,
+    })
+
+    await params.sessionStore.saveSession(session)
+
+    const binding: FeishuConversationBinding = {
+      sessionId: session.id,
+      createdAt: previousBinding?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    await sessionMap.set(conversationKey, binding)
+
+    logger.info('[feishu] session switched by command', {
+      conversationKey,
+      previousSessionId: previousBinding?.sessionId || null,
+      nextSessionId: session.id,
+      messageId: message.messageId,
+      senderId: message.senderId,
+    })
+
+    await replyFinal(
+      message,
+      [
+        '已创建并切换到新会话。',
+        `session_id: ${session.id}`,
+        '后续消息将进入这个新会话。',
+      ].join('\n')
+    )
+
+    return true
   }
 
   async function loadReplyTargetMessage(message: FeishuIncomingMessage): Promise<FeishuIncomingMessage | null> {
@@ -757,6 +814,35 @@ function normalizeResources(resources: NormalizedMessage['resources'] | undefine
       return normalized
     })
     .filter((resource): resource is FeishuResourceDescriptor => Boolean(resource))
+}
+
+function parseConversationControlCommand(
+  normalizedContent: string
+): {
+  type: 'new_session'
+  title?: string
+} | null {
+  const value = normalizedContent.trim()
+  if (!value.startsWith(NEW_SESSION_COMMAND)) {
+    return null
+  }
+
+  const rest = value.slice(NEW_SESSION_COMMAND.length)
+  if (rest && !/^\s+/.test(rest)) {
+    return null
+  }
+
+  const title = rest.trim()
+  if (!title) {
+    return {
+      type: 'new_session',
+    }
+  }
+
+  return {
+    type: 'new_session',
+    title,
+  }
 }
 
 function extractEventId(raw: unknown): string | undefined {
