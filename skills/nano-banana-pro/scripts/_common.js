@@ -15,6 +15,10 @@ const MODEL_NAME = 'google/gemini-3-pro-image-preview'
 loadDotEnv({ path: path.join(REPO_ROOT, '.env') })
 loadDotEnv({ path: path.join(REPO_ROOT, '.env.local'), override: true })
 
+if (!process.env.OPENROUTER_KEY && process.env.OPENROUTER_API_KEY) {
+  process.env.OPENROUTER_KEY = process.env.OPENROUTER_API_KEY
+}
+
 export function parseArgs(argv) {
   const args = {}
   for (let index = 0; index < argv.length; index += 1) {
@@ -64,7 +68,7 @@ export function normalizeResolution(value, fallback = '1K') {
 }
 
 export function resolveApiKey(args) {
-  return firstNonEmpty(args['api-key'], process.env.OPENROUTER_KEY, process.env.OPENROUTER_API_KEY)
+  return firstNonEmpty(args['api-key'], process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_KEY)
 }
 
 export function resolveProxyUrl(args) {

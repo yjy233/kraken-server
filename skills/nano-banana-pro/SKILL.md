@@ -71,8 +71,10 @@ Map user requests to API parameters:
 
 The script checks for API key in this order:
 1. `--api-key` argument (use if user provided key in chat)
-2. `OPENROUTER_KEY` environment variable
-3. `OPENROUTER_API_KEY` environment variable
+2. `OPENROUTER_API_KEY` environment variable
+3. `OPENROUTER_KEY` environment variable
+
+When only `OPENROUTER_API_KEY` exists in `.env`, the JS scripts automatically mirror it to `OPENROUTER_KEY` for compatibility.
 
 If neither is available, the script exits with an error message.
 
@@ -80,7 +82,7 @@ If neither is available, the script exits with an error message.
 
 - Preflight:
   - `command -v node` (must exist)
-  - `test -n \"$OPENROUTER_KEY\"` or `test -n \"$OPENROUTER_API_KEY\"` (or pass `--api-key`)
+  - `test -n \"$OPENROUTER_API_KEY\"` or `test -n \"$OPENROUTER_KEY\"` (or pass `--api-key`)
   - If editing: `test -f \"path/to/input.png\"`
 
 - Common failures:
