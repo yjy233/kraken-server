@@ -68,7 +68,7 @@ export function normalizeResolution(value, fallback = '1K') {
 }
 
 export function resolveApiKey(args) {
-  return firstNonEmpty(args['api-key'], process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_KEY)
+  return firstNonEmpty(process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_KEY)
 }
 
 export function resolveProxyUrl(args) {
@@ -132,7 +132,7 @@ export async function generateImage({
   proxyUrl,
 }) {
   if (!apiKey) {
-    fail('No API key provided. Set OPENROUTER_KEY / OPENROUTER_API_KEY or pass --api-key.')
+    fail('No API key provided. Set OPENROUTER_API_KEY or OPENROUTER_KEY in .env / .env.local.')
   }
 
   const inputImage = await loadInputImageIfPresent(inputImagePath)

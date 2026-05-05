@@ -13,12 +13,12 @@ Run the script using absolute path:
 
 **Generate new image:**
 ```bash
-node /path/to/this/skill/scripts/generate_image.js --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K] [--api-key KEY]
+node /path/to/this/skill/scripts/generate_image.js --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K]
 ```
 
 **Edit existing image:**
 ```bash
-node /path/to/this/skill/scripts/generate_image.js --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K] [--api-key KEY]
+node /path/to/this/skill/scripts/generate_image.js --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K]
 ```
 
 **Custom output directory:**
@@ -70,9 +70,8 @@ Map user requests to API parameters:
 ## API Key
 
 The script checks for API key in this order:
-1. `--api-key` argument (use if user provided key in chat)
-2. `OPENROUTER_API_KEY` environment variable
-3. `OPENROUTER_KEY` environment variable
+1. `OPENROUTER_API_KEY` environment variable
+2. `OPENROUTER_KEY` environment variable
 
 When only `OPENROUTER_API_KEY` exists in `.env`, the JS scripts automatically mirror it to `OPENROUTER_KEY` for compatibility.
 
@@ -82,11 +81,11 @@ If neither is available, the script exits with an error message.
 
 - Preflight:
   - `command -v node` (must exist)
-  - `test -n \"$OPENROUTER_API_KEY\"` or `test -n \"$OPENROUTER_KEY\"` (or pass `--api-key`)
+  - `test -n \"$OPENROUTER_API_KEY\"` or `test -n \"$OPENROUTER_KEY\"`
   - If editing: `test -f \"path/to/input.png\"`
 
 - Common failures:
-  - `No API key provided.` → set `OPENROUTER_KEY` / `OPENROUTER_API_KEY` or pass `--api-key`
+  - `No API key provided.` → set `OPENROUTER_API_KEY` / `OPENROUTER_KEY` in `.env` or `.env.local`
   - `Error loading input image:` → wrong path / unreadable file; verify `--input-image` points to a real image
   - Proxy support requires installed dependencies including `undici`; run `npm install` first
   - DNS / TLS / timeout errors in sandboxed execution → keep the local proxy running at `http://127.0.0.1:7897`, or pass `--proxy` / set `NANO_BANANA_PROXY`

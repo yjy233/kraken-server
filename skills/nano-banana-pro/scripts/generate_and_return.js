@@ -21,6 +21,8 @@ function printUsage() {
 Env:
   OPENROUTER_KEY / OPENROUTER_API_KEY
   NANO_BANANA_PROXY / HTTPS_PROXY / HTTP_PROXY
+
+API key is loaded from repository root .env / .env.local via dotenv.
 `)
 }
 
