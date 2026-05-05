@@ -1,6 +1,6 @@
 ---
 name: nano-banana-pro
-description: Generate/edit images with Nano Banana Pro (Gemini 3 Pro Image) via OpenRouter. Use for image create/modify requests incl. edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image.
+description: Use JS scripts with dotenv to generate or edit images through Nano Banana Pro (Gemini 3 Pro Image) via OpenRouter, with text-to-image, image editing, resolution control, and proxy support.
 ---
 
 # Nano Banana Pro Image Generation & Editing
@@ -13,17 +13,17 @@ Run the script using absolute path:
 
 **Generate new image:**
 ```bash
-uv run /path/to/this/skill/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K] [--api-key KEY]
+node /path/to/this/skill/scripts/generate_image.js --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K] [--api-key KEY]
 ```
 
 **Edit existing image:**
 ```bash
-uv run /path/to/this/skill/scripts/generate_image.py --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K] [--api-key KEY]
+node /path/to/this/skill/scripts/generate_image.js --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K] [--api-key KEY]
 ```
 
 **Custom output directory:**
 ```bash
-uv run /path/to/this/skill/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" --output-dir "/custom/path"
+node /path/to/this/skill/scripts/generate_image.js --prompt "your image description" --filename "output-name.png" --output-dir "/custom/path"
 ```
 
 **Proxy:**
@@ -33,24 +33,25 @@ uv run /path/to/this/skill/scripts/generate_image.py --prompt "your image descri
 - Disable proxy for one run with `--proxy ""`
 
 ```bash
-uv run /path/to/this/skill/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" --proxy "http://127.0.0.1:7897"
+node /path/to/this/skill/scripts/generate_image.js --prompt "your image description" --filename "output-name.png" --proxy "http://127.0.0.1:7897"
 ```
 
 **Output Location:**
 - **Default:** Images are saved to `./output_images/` (relative to this skill's root directory)
 - **Custom:** Use `--output-dir` to specify a different directory
 - The script will create the output directory if it doesn't exist
+- The scripts automatically load repository root `.env` and `.env.local` through `dotenv`
 
 ## Default Workflow (draft → iterate → final)
 
 Goal: fast iteration without burning time on 4K until the prompt is correct.
 
 - Draft (1K): quick feedback loop
-  - `uv run /path/to/this/skill/scripts/generate_image.py --prompt "<draft prompt>" --filename "yyyy-mm-dd-hh-mm-ss-draft.png" --resolution 1K`
+  - `node /path/to/this/skill/scripts/generate_image.js --prompt "<draft prompt>" --filename "yyyy-mm-dd-hh-mm-ss-draft.png" --resolution 1K`
 - Iterate: adjust prompt in small diffs; keep filename new per run
   - If editing: keep the same `--input-image` for every iteration until you’re happy.
 - Final (4K): only when prompt is locked
-  - `uv run /path/to/this/skill/scripts/generate_image.py --prompt "<final prompt>" --filename "yyyy-mm-dd-hh-mm-ss-final.png" --resolution 4K`
+  - `node /path/to/this/skill/scripts/generate_image.js --prompt "<final prompt>" --filename "yyyy-mm-dd-hh-mm-ss-final.png" --resolution 4K`
 
 ## Resolution Options
 
@@ -71,19 +72,21 @@ Map user requests to API parameters:
 The script checks for API key in this order:
 1. `--api-key` argument (use if user provided key in chat)
 2. `OPENROUTER_KEY` environment variable
+3. `OPENROUTER_API_KEY` environment variable
 
 If neither is available, the script exits with an error message.
 
 ## Preflight + Common Failures (fast fixes)
 
 - Preflight:
-  - `command -v uv` (must exist)
-  - `test -n \"$OPENROUTER_KEY\"` (or pass `--api-key`)
+  - `command -v node` (must exist)
+  - `test -n \"$OPENROUTER_KEY\"` or `test -n \"$OPENROUTER_API_KEY\"` (or pass `--api-key`)
   - If editing: `test -f \"path/to/input.png\"`
 
 - Common failures:
-  - `Error: No API key provided.` → set `OPENROUTER_KEY` or pass `--api-key`
+  - `No API key provided.` → set `OPENROUTER_KEY` / `OPENROUTER_API_KEY` or pass `--api-key`
   - `Error loading input image:` → wrong path / unreadable file; verify `--input-image` points to a real image
+  - Proxy support requires installed dependencies including `undici`; run `npm install` first
   - DNS / TLS / timeout errors in sandboxed execution → keep the local proxy running at `http://127.0.0.1:7897`, or pass `--proxy` / set `NANO_BANANA_PROXY`
   - “quota/permission/403” style API errors → wrong key, no access, or quota exceeded; try a different key/account
 
@@ -133,17 +136,17 @@ Use templates when the user is vague or when edits must be precise.
 ## Output
 
 - Saves PNG to current directory (or specified path if filename includes directory)
-- Script outputs the full path to the generated image
+- Script outputs structured JSON with the full path to the generated image
 - **Do not read the image back** - just inform the user of the saved path
 
 ## Examples
 
 **Generate new image:**
 ```bash
-uv run /path/to/this/skill/scripts/generate_image.py --prompt "A serene Japanese garden with cherry blossoms" --filename "2025-11-23-14-23-05-japanese-garden.png" --resolution 4K
+node /path/to/this/skill/scripts/generate_image.js --prompt "A serene Japanese garden with cherry blossoms" --filename "2025-11-23-14-23-05-japanese-garden.png" --resolution 4K
 ```
 
 **Edit existing image:**
 ```bash
-uv run /path/to/this/skill/scripts/generate_image.py --prompt "make the sky more dramatic with storm clouds" --filename "2025-11-23-14-25-30-dramatic-sky.png" --input-image "original-photo.jpg" --resolution 2K
+node /path/to/this/skill/scripts/generate_image.js --prompt "make the sky more dramatic with storm clouds" --filename "2025-11-23-14-25-30-dramatic-sky.png" --input-image "original-photo.jpg" --resolution 2K
 ```
