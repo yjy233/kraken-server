@@ -3,6 +3,7 @@ import './bootstrap.js'
 import path from 'node:path'
 import os from 'node:os'
 import http from 'node:http'
+import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
@@ -40,12 +41,44 @@ const PUBLIC_DIR = path.join(ROOT_DIR, 'public')
 const SESSION_DIR = path.join(ROOT_DIR, '.sessions')
 const SCHEDULED_JOBS_DIR = path.join(ROOT_DIR, '.scheduled-jobs')
 const MAX_MARKDOWN_IMAGE_BYTES = 10 * 1024 * 1024
+const MAX_WORKSPACE_UPLOAD_BYTES = 25 * 1024 * 1024
 const MARKDOWN_IMAGE_CONTENT_TYPES = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
   ['.jpeg', 'image/jpeg'],
   ['.webp', 'image/webp'],
   ['.gif', 'image/gif'],
+])
+const DOWNLOAD_CONTENT_TYPES = new Map([
+  ['.md', 'text/markdown; charset=utf-8'],
+  ['.markdown', 'text/markdown; charset=utf-8'],
+  ['.mdx', 'text/markdown; charset=utf-8'],
+  ['.txt', 'text/plain; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.jsonl', 'application/x-ndjson; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.jsx', 'text/javascript; charset=utf-8'],
+  ['.ts', 'text/typescript; charset=utf-8'],
+  ['.tsx', 'text/typescript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.html', 'text/html; charset=utf-8'],
+  ['.htm', 'text/html; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif'],
+  ['.pdf', 'application/pdf'],
+  ['.zip', 'application/zip'],
+  ['.gz', 'application/gzip'],
+  ['.tar', 'application/x-tar'],
+  ['.tgz', 'application/gzip'],
+  ['.csv', 'text/csv; charset=utf-8'],
+  ['.tsv', 'text/tab-separated-values; charset=utf-8'],
+  ['.xml', 'application/xml; charset=utf-8'],
+  ['.yaml', 'application/yaml; charset=utf-8'],
+  ['.yml', 'application/yaml; charset=utf-8'],
 ])
 
 const HOST = process.env.HOST || '0.0.0.0'
@@ -172,7 +205,7 @@ const feishuService = createFeishuService({
 
 const app = express()
 app.disable('x-powered-by')
-app.use(express.json({ limit: '1mb' }))
+app.use(express.json({ limit: '3mb' }))
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }))
 
 app.get('/api/health', async (_req, res) => {
@@ -277,6 +310,160 @@ app.get('/api/workspace/file', async (req, res, next) => {
     const file = await workspaceBrowser.readFile(input)
     res.json({ ok: true, ...file })
   } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/workspace/file', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Invalid JSON body' })
+    }
+    const sessionId = typeof req.body.sessionId === 'string' ? req.body.sessionId.trim() : ''
+    const filePath = typeof req.body.path === 'string' ? req.body.path.trim() : ''
+    const content = typeof req.body.content === 'string' ? req.body.content : null
+    if (!filePath) {
+      return res.status(400).json({ ok: false, error: 'path is required' })
+    }
+    if (content === null) {
+      return res.status(400).json({ ok: false, error: 'content is required' })
+    }
+
+    const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+    const input: {
+      sessionId?: string
+      sandbox?: SessionSandboxConfig | undefined
+      path: string
+      content: string
+    } = {
+      path: filePath,
+      content,
+    }
+    if (session?.id) {
+      input.sessionId = session.id
+    }
+    if (session?.sandbox !== undefined) {
+      input.sandbox = session.sandbox
+    }
+    const file = await workspaceBrowser.writeTextFile(input)
+    res.json({ ok: true, ...file })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete('/api/workspace/file', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Invalid JSON body' })
+    }
+    const sessionId = typeof req.body.sessionId === 'string' ? req.body.sessionId.trim() : ''
+    const filePath = typeof req.body.path === 'string' ? req.body.path.trim() : ''
+    if (!filePath) {
+      return res.status(400).json({ ok: false, error: 'path is required' })
+    }
+
+    const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+    const input: {
+      sessionId?: string
+      sandbox?: SessionSandboxConfig | undefined
+      path: string
+    } = {
+      path: filePath,
+    }
+    if (session?.id) {
+      input.sessionId = session.id
+    }
+    if (session?.sandbox !== undefined) {
+      input.sandbox = session.sandbox
+    }
+    const deleted = await workspaceBrowser.deleteFile(input)
+    res.json({ ok: true, ...deleted })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post(
+  '/api/workspace/upload',
+  express.raw({ type: 'application/octet-stream', limit: MAX_WORKSPACE_UPLOAD_BYTES }),
+  async (req, res, next) => {
+    try {
+      const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''
+      const directoryPath = typeof req.query.path === 'string' ? req.query.path.trim() : '.'
+      const fileName = typeof req.query.filename === 'string' ? req.query.filename.trim() : ''
+      if (!fileName) {
+        return res.status(400).json({ ok: false, error: 'filename query parameter is required' })
+      }
+      if (!Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ ok: false, error: 'application/octet-stream body is required' })
+      }
+
+      const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+      const input: {
+        sessionId?: string
+        sandbox?: SessionSandboxConfig | undefined
+        directoryPath?: string
+        fileName: string
+        content: Buffer
+      } = {
+        directoryPath: directoryPath || '.',
+        fileName,
+        content: req.body,
+      }
+      if (session?.id) {
+        input.sessionId = session.id
+      }
+      if (session?.sandbox !== undefined) {
+        input.sandbox = session.sandbox
+      }
+      const file = await workspaceBrowser.uploadFile(input)
+      res.status(201).json({ ok: true, ...file })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.get('/api/workspace/download', async (req, res, next) => {
+  try {
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''
+    const filePath = typeof req.query.path === 'string' ? req.query.path.trim() : ''
+    if (!filePath) {
+      return res.status(400).json({ ok: false, error: 'path query parameter is required' })
+    }
+
+    const session = sessionId ? await sessionStore.loadSession(sessionId) : null
+    const sandboxPolicy = buildSessionSandboxPolicy({
+      sessionId: session?.id || 'workspace-browser',
+      sessionSandbox: session?.sandbox,
+      defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
+      sensitivePaths: SENSITIVE_PATHS,
+      enablePathSandbox: ENABLE_PATH_SANDBOX,
+    })
+    const targetPath = await resolveSandboxPath(sandboxPolicy, filePath, { mode: 'read' })
+    const stat = await fs.stat(targetPath)
+    if (!stat.isFile()) {
+      return res.status(404).json({ ok: false, error: 'File not found' })
+    }
+
+    const fileName = path.basename(targetPath)
+    res.setHeader('Content-Type', inferDownloadContentType(targetPath))
+    res.setHeader('Content-Length', String(stat.size))
+    res.setHeader('Content-Disposition', buildAttachmentDisposition(fileName))
+    res.setHeader('Cache-Control', 'private, max-age=60')
+
+    const stream = createReadStream(targetPath)
+    stream.on('error', next)
+    stream.pipe(res)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to download file'
+    if (isMissingFileError(error)) {
+      return res.status(404).json({ ok: false, error: 'File not found' })
+    }
+    if (message.includes('sandbox policy') || message.includes('sensitive path')) {
+      return res.status(403).json({ ok: false, error: message })
+    }
     next(error)
   }
 })
@@ -551,7 +738,7 @@ app.get('/api/scheduled-executions/:executionId', async (req, res, next) => {
 
 app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : 'Unknown server error'
-  const status = message === 'message is required' || message === 'Invalid JSON body' ? 400 : 500
+  const status = errorStatus(error, message)
   if (res.headersSent) {
     return next(error)
   }
@@ -619,6 +806,54 @@ function isMissingFileError(error: unknown): boolean {
     typeof error === 'object' &&
     (error as NodeJS.ErrnoException).code === 'ENOENT'
   )
+}
+
+function inferDownloadContentType(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase()
+  return DOWNLOAD_CONTENT_TYPES.get(extension) || 'application/octet-stream'
+}
+
+function buildAttachmentDisposition(fileName: string): string {
+  const asciiFallback = fileName
+    .replace(/[^\x20-\x7e]/g, '_')
+    .replace(/["\\]/g, '_')
+    .trim() || 'download'
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeRFC5987Value(fileName)}`
+}
+
+function encodeRFC5987Value(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/\*/g, '%2A')
+}
+
+function errorStatus(error: unknown, message: string): number {
+  if (
+    isRecordWithCode(error) &&
+    (error.type === 'entity.too.large' || error.code === 'LIMIT_FILE_SIZE')
+  ) {
+    return 413
+  }
+  if (
+    message === 'message is required' ||
+    message === 'Invalid JSON body' ||
+    message === 'path is required' ||
+    message === 'content is required' ||
+    message === 'filename is required' ||
+    message === 'Target path is a directory' ||
+    message === 'Requested path is not a file' ||
+    message.startsWith('Text content exceeds')
+  ) {
+    return 400
+  }
+  if (message.includes('sandbox policy') || message.includes('sensitive path') || message.includes('outside workspace')) {
+    return 403
+  }
+  return 500
+}
+
+function isRecordWithCode(value: unknown): value is { code?: unknown; type?: unknown } {
+  return Boolean(value && typeof value === 'object')
 }
 
 function buildScheduledJobInput(body: unknown): Omit<ScheduledJob, 'id' | 'createdAt' | 'updatedAt'> {

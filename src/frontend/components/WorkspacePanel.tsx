@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { marked } from 'marked'
-import { fetchWorkspaceFile, fetchWorkspaceTree } from '../api.js'
+import {
+  buildWorkspaceDownloadUrl,
+  deleteWorkspaceFile,
+  fetchWorkspaceFile,
+  fetchWorkspaceTree,
+  saveWorkspaceFile,
+  uploadWorkspaceFile,
+} from '../api.js'
 import type { Session, WorkspaceEntry, WorkspaceFile, WorkspaceListing } from '../types.js'
 
 interface WorkspacePanelProps {
@@ -17,6 +24,15 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
   const [selectedFile, setSelectedFile] = useState<WorkspaceFile | null>(null)
   const [loadingTree, setLoadingTree] = useState(false)
   const [loadingFile, setLoadingFile] = useState(false)
+  const [treeRefreshToken, setTreeRefreshToken] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [draftContent, setDraftContent] = useState('')
+  const [savingFile, setSavingFile] = useState(false)
+  const [deletingFile, setDeletingFile] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadInputKey, setUploadInputKey] = useState(0)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const sessionId = session?.id || null
@@ -25,6 +41,10 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
   useEffect(() => {
     setActivePath('.')
     setSelectedFile(null)
+    setEditing(false)
+    setDraftContent('')
+    setUploadFile(null)
+    setStatusMessage(null)
   }, [sessionId, workspaceRoot])
 
   useEffect(() => {
@@ -53,7 +73,12 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
     return () => {
       cancelled = true
     }
-  }, [sessionId, activePath, workspaceRoot])
+  }, [sessionId, activePath, workspaceRoot, treeRefreshToken])
+
+  useEffect(() => {
+    setEditing(false)
+    setDraftContent(selectedFile?.content || '')
+  }, [selectedFile?.path, selectedFile?.content])
 
   const breadcrumbParts = useMemo(() => {
     if (!listing?.path || listing.path === '.') {
@@ -62,14 +87,25 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
     return listing.path.split('/').filter(Boolean)
   }, [listing?.path])
 
+  const refreshTree = () => {
+    setTreeRefreshToken((value) => value + 1)
+  }
+
   const openDirectory = async (targetPath: string) => {
-    setActivePath(targetPath || '.')
+    const normalizedPath = targetPath || '.'
+    if (normalizedPath === activePath) {
+      refreshTree()
+    } else {
+      setActivePath(normalizedPath)
+    }
     setSelectedFile(null)
+    setStatusMessage(null)
   }
 
   const openFile = async (entry: WorkspaceEntry) => {
     setLoadingFile(true)
     setError(null)
+    setStatusMessage(null)
     try {
       const file = await fetchWorkspaceFile({ sessionId, path: entry.path })
       setSelectedFile(file)
@@ -80,6 +116,89 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
       setLoadingFile(false)
     }
   }
+
+  const handleSaveFile = async () => {
+    if (!selectedFile || !isEditableWorkspaceFile(selectedFile)) {
+      return
+    }
+    setSavingFile(true)
+    setError(null)
+    try {
+      const file = await saveWorkspaceFile({
+        sessionId,
+        path: selectedFile.path,
+        content: draftContent,
+      })
+      setSelectedFile(file)
+      setEditing(false)
+      setStatusMessage('File saved.')
+      refreshTree()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingFile(false)
+    }
+  }
+
+  const handleUpload = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!uploadFile) {
+      return
+    }
+    setUploadingFile(true)
+    setError(null)
+    setStatusMessage(null)
+    try {
+      const file = await uploadWorkspaceFile({
+        sessionId,
+        path: listing?.path || activePath,
+        file: uploadFile,
+      })
+      setSelectedFile(file)
+      setUploadFile(null)
+      setUploadInputKey((value) => value + 1)
+      setStatusMessage('File uploaded.')
+      refreshTree()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
+  const handleDeleteFile = async () => {
+    if (!selectedFile) {
+      return
+    }
+    const confirmed = window.confirm(`Delete ${selectedFile.path}?`)
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingFile(true)
+    setError(null)
+    try {
+      const deletedPath = selectedFile.path
+      await deleteWorkspaceFile({ sessionId, path: deletedPath })
+      setSelectedFile(null)
+      setEditing(false)
+      setDraftContent('')
+      setStatusMessage(`Deleted ${deletedPath}.`)
+      refreshTree()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeletingFile(false)
+    }
+  }
+
+  const cancelEditing = () => {
+    setDraftContent(selectedFile?.content || '')
+    setEditing(false)
+  }
+
+  const canEditSelectedFile = Boolean(selectedFile && isEditableWorkspaceFile(selectedFile))
+  const hasDraftChanges = Boolean(selectedFile && draftContent !== (selectedFile.content || ''))
 
   return (
     <section className="workspace-panel">
@@ -118,6 +237,40 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
           })}
         </div>
 
+        <form className="workspace-upload" onSubmit={(event) => void handleUpload(event)}>
+          <span className="workspace-upload-label">
+            Upload file
+          </span>
+          <div className="workspace-upload-row">
+            <input
+              key={uploadInputKey}
+              id="workspace-upload-input"
+              className="workspace-file-input"
+              type="file"
+              onChange={(event) => setUploadFile(event.currentTarget.files?.[0] || null)}
+              disabled={uploadingFile}
+            />
+            <label className="workspace-file-picker" htmlFor="workspace-upload-input">
+              Choose
+            </label>
+            <span className="workspace-file-name" title={uploadFile?.name || 'No file selected'}>
+              {uploadFile?.name || 'No file selected'}
+            </span>
+            <button
+              className="ghost-button workspace-upload-button"
+              type="submit"
+              disabled={!uploadFile || uploadingFile}
+            >
+              {uploadingFile ? 'Uploading...' : 'Upload'}
+            </button>
+          </div>
+          {uploadFile && (
+            <p className="workspace-upload-selection">
+              {formatBytes(uploadFile.size)}
+            </p>
+          )}
+        </form>
+
         <div className="workspace-tree">
           {loadingTree && <p className="workspace-empty">Loading…</p>}
           {!loadingTree && listing && listing.entries.length === 0 && (
@@ -151,15 +304,88 @@ export const WorkspacePanel: React.FC<WorkspacePanelProps> = ({
         {!loadingFile && selectedFile && (
           <article className="workspace-document">
             <div className="workspace-document-header">
-              <h3>{selectedFile.path}</h3>
-              <span>{selectedFile.contentType} · {formatBytes(selectedFile.size)}</span>
+              <div className="workspace-document-heading">
+                <h3>{selectedFile.path}</h3>
+                <span>{selectedFile.contentType} · {formatBytes(selectedFile.size)}</span>
+              </div>
+              {canEditSelectedFile && (
+                <div className="workspace-document-actions">
+                  {editing ? (
+                    <>
+                      <button
+                        className="ghost-button workspace-secondary-button"
+                        type="button"
+                        onClick={cancelEditing}
+                        disabled={savingFile || deletingFile}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        onClick={() => void handleSaveFile()}
+                        disabled={savingFile || deletingFile || !hasDraftChanges}
+                      >
+                        {savingFile ? 'Saving...' : 'Save'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => setEditing(true)}
+                      disabled={deletingFile}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              )}
+              {!editing && (
+                <div className="workspace-document-actions">
+                  <a
+                    className="ghost-button workspace-download-button"
+                    href={buildWorkspaceDownloadUrl({ sessionId, path: selectedFile.path })}
+                    download={fileNameFromPath(selectedFile.path)}
+                  >
+                    Download
+                  </a>
+                  <button
+                    className="ghost-button workspace-danger-button"
+                    type="button"
+                    onClick={() => void handleDeleteFile()}
+                    disabled={deletingFile}
+                  >
+                    {deletingFile ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              )}
             </div>
-            <WorkspaceFilePreview file={selectedFile} sessionId={sessionId} />
+            {statusMessage && <div className="workspace-status">{statusMessage}</div>}
+            {editing && canEditSelectedFile ? (
+              <textarea
+                className="workspace-editor"
+                value={draftContent}
+                onChange={(event) => setDraftContent(event.currentTarget.value)}
+                spellCheck={false}
+              />
+            ) : (
+              <WorkspaceFilePreview file={selectedFile} sessionId={sessionId} />
+            )}
           </article>
         )}
       </div>
     </section>
   )
+}
+
+function isEditableWorkspaceFile(file: WorkspaceFile): boolean {
+  return (file.contentType === 'markdown' || file.contentType === 'text') && file.content !== undefined
+}
+
+function fileNameFromPath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  return normalized.slice(normalized.lastIndexOf('/') + 1) || 'download'
 }
 
 const WorkspaceFilePreview: React.FC<{

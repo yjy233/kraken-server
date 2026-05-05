@@ -888,6 +888,10 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.workspace-document-header {
+  align-items: center;
+}
+
 .workspace-panel-header h3,
 .workspace-document-header h3 {
   margin: 0;
@@ -902,11 +906,31 @@ body {
   word-break: break-word;
 }
 
-.workspace-document-header span {
+.workspace-document-heading {
+  min-width: 0;
+}
+
+.workspace-document-heading h3 {
+  overflow-wrap: anywhere;
+}
+
+.workspace-document-heading span {
   color: var(--text-tertiary);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.workspace-document-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.workspace-download-button {
+  flex-shrink: 0;
+  text-decoration: none;
 }
 
 .workspace-breadcrumbs {
@@ -925,6 +949,76 @@ body {
   padding: 0;
   font: inherit;
   font-size: 12px;
+}
+
+.workspace-upload {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-upload-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.workspace-file-picker {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 7px 10px;
+}
+
+.workspace-file-picker:hover {
+  background: var(--surface-hover);
+}
+
+.workspace-file-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.workspace-upload-button {
+  min-width: 72px;
+  flex: 0 0 auto;
+}
+
+.workspace-upload-selection {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .workspace-tree {
@@ -1007,6 +1101,16 @@ body {
   min-height: 100%;
 }
 
+.workspace-status {
+  margin: 14px 18px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--brand-light);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .workspace-markdown,
 .workspace-text {
   padding: 20px 22px 26px;
@@ -1020,6 +1124,52 @@ body {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.workspace-editor {
+  display: block;
+  width: calc(100% - 44px);
+  min-height: calc(100vh - 300px);
+  margin: 20px 22px 26px;
+  padding: 14px 16px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.workspace-editor:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.workspace-secondary-button {
+  background: var(--assistant-bubble);
+  color: var(--text-secondary);
+}
+
+.workspace-secondary-button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.workspace-danger-button {
+  background: var(--danger);
+  color: #fff;
+}
+
+.workspace-danger-button:hover {
+  background: #d92d24;
+}
+
+.workspace-danger-button:disabled {
+  background: var(--assistant-bubble);
+  color: var(--text-tertiary);
 }
 
 .workspace-image-preview {
@@ -1609,6 +1759,19 @@ body {
   .workspace-panel {
     grid-template-columns: 1fr;
     padding: 16px;
+  }
+
+  .workspace-upload-row,
+  .workspace-document-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-document-actions,
+  .workspace-danger-button,
+  .workspace-download-button,
+  .workspace-upload-button {
+    width: 100%;
   }
 
   .scheduled-layout,

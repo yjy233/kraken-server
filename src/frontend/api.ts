@@ -129,6 +129,89 @@ export async function fetchWorkspaceFile(params: {
   return data
 }
 
+export function buildWorkspaceDownloadUrl(params: {
+  sessionId?: string | null
+  path: string
+}): string {
+  const query = new URLSearchParams({ path: params.path })
+  if (params.sessionId) {
+    query.set('sessionId', params.sessionId)
+  }
+  return `${BASE}/api/workspace/download?${query.toString()}`
+}
+
+export async function saveWorkspaceFile(params: {
+  sessionId?: string | null
+  path: string
+  content: string
+}): Promise<WorkspaceFile> {
+  const body: {
+    path: string
+    content: string
+    sessionId?: string
+  } = {
+    path: params.path,
+    content: params.content,
+  }
+  if (params.sessionId) {
+    body.sessionId = params.sessionId
+  }
+  return request('/api/workspace/file', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteWorkspaceFile(params: {
+  sessionId?: string | null
+  path: string
+}): Promise<void> {
+  const body: {
+    path: string
+    sessionId?: string
+  } = {
+    path: params.path,
+  }
+  if (params.sessionId) {
+    body.sessionId = params.sessionId
+  }
+  await request('/api/workspace/file', {
+    method: 'DELETE',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function uploadWorkspaceFile(params: {
+  sessionId?: string | null
+  path: string
+  file: File
+}): Promise<WorkspaceFile> {
+  const query = new URLSearchParams({
+    path: params.path || '.',
+    filename: params.file.name,
+  })
+  if (params.sessionId) {
+    query.set('sessionId', params.sessionId)
+  }
+
+  const response = await fetch(`${BASE}/api/workspace/upload?${query.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: params.file,
+  })
+  const text = await response.text()
+  let payload: any = {}
+  try {
+    payload = text ? JSON.parse(text) : {}
+  } catch {
+    payload = { error: text || 'Invalid server response' }
+  }
+  if (!response.ok) {
+    throw new Error(payload.error || 'Upload failed')
+  }
+  return payload as WorkspaceFile
+}
+
 export interface ChatPayload {
   sessionId: string | null
   systemPrompt: string

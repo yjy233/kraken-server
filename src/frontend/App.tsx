@@ -213,7 +213,7 @@ export default function App() {
               <div className="scheduled-header-copy">
                 <h2>Workspace Files</h2>
                 <p>
-                  Browse the current workspace and preview Markdown files directly in the app.
+                  Browse, upload, edit, and download files from the current workspace.
                 </p>
               </div>
             ) : (
@@ -243,7 +243,7 @@ export default function App() {
               <span className="session-count">
                 {sessions.activeSession?.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || 'Workspace'}
               </span>
-              <span className="model-pill">Read only</span>
+              <span className="model-pill">Browse and edit</span>
             </div>
           ) : (
             <div className="header-meta">

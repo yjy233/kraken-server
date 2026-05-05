@@ -35,18 +35,25 @@ export function createWorkspaceBrowserService(config: {
   sensitivePaths: string[]
   enablePathSandbox: boolean
 }) {
-  async function listDirectory(input: {
-    path?: string
+  function buildPolicy(input: {
     sandbox?: SessionSandboxConfig | undefined
     sessionId?: string
-  }): Promise<WorkspaceDirectoryListing> {
-    const sandboxPolicy = buildSessionSandboxPolicy({
+  }) {
+    return buildSessionSandboxPolicy({
       sessionId: input.sessionId || 'workspace-browser',
       sessionSandbox: input.sandbox,
       defaultWorkspaceRoot: config.defaultWorkspaceRoot,
       sensitivePaths: config.sensitivePaths,
       enablePathSandbox: config.enablePathSandbox,
     })
+  }
+
+  async function listDirectory(input: {
+    path?: string
+    sandbox?: SessionSandboxConfig | undefined
+    sessionId?: string
+  }): Promise<WorkspaceDirectoryListing> {
+    const sandboxPolicy = buildPolicy(input)
 
     if (!(await exists(sandboxPolicy.workspaceRoot))) {
       return {
@@ -105,13 +112,7 @@ export function createWorkspaceBrowserService(config: {
     sandbox?: SessionSandboxConfig | undefined
     sessionId?: string
   }): Promise<WorkspaceFileRecord> {
-    const sandboxPolicy = buildSessionSandboxPolicy({
-      sessionId: input.sessionId || 'workspace-browser',
-      sessionSandbox: input.sandbox,
-      defaultWorkspaceRoot: config.defaultWorkspaceRoot,
-      sensitivePaths: config.sensitivePaths,
-      enablePathSandbox: config.enablePathSandbox,
-    })
+    const sandboxPolicy = buildPolicy(input)
 
     const targetPath = await resolveSandboxPath(sandboxPolicy, input.path, { mode: 'read' })
     const stat = await fs.stat(targetPath)
@@ -152,9 +153,95 @@ export function createWorkspaceBrowserService(config: {
     }
   }
 
+  async function writeTextFile(input: {
+    path: string
+    content: string
+    sandbox?: SessionSandboxConfig | undefined
+    sessionId?: string
+  }): Promise<WorkspaceFileRecord> {
+    const sandboxPolicy = buildPolicy(input)
+    const byteLength = Buffer.byteLength(input.content, 'utf8')
+    if (byteLength > MAX_TEXT_FILE_BYTES) {
+      throw new Error(`Text content exceeds ${formatBytes(MAX_TEXT_FILE_BYTES)} limit`)
+    }
+
+    const targetPath = await resolveSandboxPath(sandboxPolicy, input.path, { mode: 'write', allowMissing: true })
+    await ensureWritableFileTarget(targetPath)
+    await fs.mkdir(path.dirname(targetPath), { recursive: true })
+    await fs.writeFile(targetPath, input.content, 'utf8')
+
+    const outputInput: {
+      path: string
+      sandbox?: SessionSandboxConfig | undefined
+      sessionId?: string
+    } = {
+      path: toDisplayPath(sandboxPolicy, targetPath),
+    }
+    if (input.sandbox !== undefined) {
+      outputInput.sandbox = input.sandbox
+    }
+    if (input.sessionId) {
+      outputInput.sessionId = input.sessionId
+    }
+    return readFile(outputInput)
+  }
+
+  async function uploadFile(input: {
+    directoryPath?: string
+    fileName: string
+    content: Uint8Array
+    sandbox?: SessionSandboxConfig | undefined
+    sessionId?: string
+  }): Promise<WorkspaceFileRecord> {
+    const sandboxPolicy = buildPolicy(input)
+    const fileName = normalizeUploadedFileName(input.fileName)
+    const targetPathInput = path.join(input.directoryPath || '.', fileName)
+    const targetPath = await resolveSandboxPath(sandboxPolicy, targetPathInput, { mode: 'write', allowMissing: true })
+    await ensureWritableFileTarget(targetPath)
+    await fs.mkdir(path.dirname(targetPath), { recursive: true })
+    await fs.writeFile(targetPath, input.content)
+
+    const outputInput: {
+      path: string
+      sandbox?: SessionSandboxConfig | undefined
+      sessionId?: string
+    } = {
+      path: toDisplayPath(sandboxPolicy, targetPath),
+    }
+    if (input.sandbox !== undefined) {
+      outputInput.sandbox = input.sandbox
+    }
+    if (input.sessionId) {
+      outputInput.sessionId = input.sessionId
+    }
+    return readFile(outputInput)
+  }
+
+  async function deleteFile(input: {
+    path: string
+    sandbox?: SessionSandboxConfig | undefined
+    sessionId?: string
+  }): Promise<{ workspaceRoot: string; path: string }> {
+    const sandboxPolicy = buildPolicy(input)
+    const targetPath = await resolveSandboxPath(sandboxPolicy, input.path, { mode: 'write' })
+    const stat = await fs.stat(targetPath)
+    if (!stat.isFile()) {
+      throw new Error('Requested path is not a file')
+    }
+    const displayPath = toDisplayPath(sandboxPolicy, targetPath)
+    await fs.unlink(targetPath)
+    return {
+      workspaceRoot: sandboxPolicy.workspaceRoot,
+      path: displayPath,
+    }
+  }
+
   return {
     listDirectory,
     readFile,
+    writeTextFile,
+    uploadFile,
+    deleteFile,
   }
 }
 
@@ -165,6 +252,50 @@ async function exists(targetPath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+async function ensureWritableFileTarget(targetPath: string): Promise<void> {
+  try {
+    const stat = await fs.stat(targetPath)
+    if (stat.isDirectory()) {
+      throw new Error('Target path is a directory')
+    }
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error
+    }
+  }
+}
+
+function normalizeUploadedFileName(value: string): string {
+  const fileName = path.basename(value.replace(/\\/g, '/').replace(/\0/g, '')).trim()
+  if (!fileName || fileName === '.' || fileName === '..') {
+    throw new Error('filename is required')
+  }
+  return fileName
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    (error as NodeJS.ErrnoException).code === 'ENOENT'
+  )
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) {
+    return `${value} B`
+  }
+  const units = ['KB', 'MB', 'GB']
+  let size = value / 1024
+  for (const unit of units) {
+    if (size < 1024) {
+      return `${size.toFixed(size >= 10 ? 0 : 1)} ${unit}`
+    }
+    size /= 1024
+  }
+  return `${size.toFixed(0)} TB`
 }
 
 function isMarkdownFile(filePath: string): boolean {
