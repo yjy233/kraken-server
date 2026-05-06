@@ -4,17 +4,19 @@ import { MessageList } from './components/MessageList.js'
 import { Composer } from './components/Composer.js'
 import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
 import { WorkspacePanel } from './components/WorkspacePanel.js'
+import { ModelUsagePanel } from './components/ModelUsagePanel.js'
 import { ContextWindowMeter } from './components/ContextWindowMeter.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
 import { useChat } from './hooks/useChat.js'
 import { useScheduledJobs } from './hooks/useScheduledJobs.js'
+import { useModelUsage } from './hooks/useModelUsage.js'
 import type { SessionSandboxConfig } from './types.js'
 
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
-  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage'>('chat')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
@@ -60,6 +62,7 @@ export default function App() {
     sessions.setContextWindow
   )
   const scheduled = useScheduledJobs(activeTab === 'scheduled')
+  const modelUsage = useModelUsage(activeTab === 'usage')
 
   useEffect(() => {
     const hasSucceededExecution = Object.values(scheduled.executionsByJob)
@@ -167,6 +170,14 @@ export default function App() {
               >
                 Scheduled
               </button>
+              <button
+                className="panel-tab"
+                type="button"
+                data-active={activeTab === 'usage'}
+                onClick={() => setActiveTab('usage')}
+              >
+                Usage
+              </button>
             </div>
 
             {activeTab === 'chat' ? (
@@ -216,11 +227,18 @@ export default function App() {
                   Browse, upload, edit, and download files from the current workspace.
                 </p>
               </div>
-            ) : (
+            ) : activeTab === 'scheduled' ? (
               <div className="scheduled-header-copy">
                 <h2>Scheduled Jobs</h2>
                 <p>
                   Create one-off and interval jobs. Each job runs inside one fixed session and can bootstrap from a template session.
+                </p>
+              </div>
+            ) : (
+              <div className="scheduled-header-copy">
+                <h2>Model Usage</h2>
+                <p>
+                  Track model requests, token totals, cache hits, usage fields, and cost by model.
                 </p>
               </div>
             )}
@@ -245,7 +263,7 @@ export default function App() {
               </span>
               <span className="model-pill">Browse and edit</span>
             </div>
-          ) : (
+          ) : activeTab === 'scheduled' ? (
             <div className="header-meta">
               <span className="session-count">
                 {scheduled.status
@@ -257,6 +275,22 @@ export default function App() {
               </span>
               <button className="ghost-button" type="button" onClick={() => void scheduled.refresh()}>
                 Refresh jobs
+              </button>
+            </div>
+          ) : (
+            <div className="header-meta">
+              <span className="session-count">
+                {modelUsage.summary
+                  ? `${modelUsage.summary.totals.requestCount} requests`
+                  : 'Usage loading'}
+              </span>
+              <span className="model-pill">
+                {modelUsage.summary
+                  ? `${modelUsage.summary.modelCount} models`
+                  : 'Model logs'}
+              </span>
+              <button className="ghost-button" type="button" onClick={() => void modelUsage.refresh()}>
+                Refresh usage
               </button>
             </div>
           )}
@@ -283,7 +317,7 @@ export default function App() {
             session={sessions.activeSession}
             fallbackWorkspaceRoot={config?.defaultWorkspaceRoot || ''}
           />
-        ) : (
+        ) : activeTab === 'scheduled' ? (
           <ScheduledJobsPanel
             jobs={scheduled.jobs}
             status={scheduled.status}
@@ -301,6 +335,13 @@ export default function App() {
             onRunJobNow={scheduled.runJobNow}
             onLoadExecutions={scheduled.loadExecutions}
             onOpenSession={handleOpenScheduledSession}
+          />
+        ) : (
+          <ModelUsagePanel
+            summary={modelUsage.summary}
+            loading={modelUsage.loading}
+            error={modelUsage.error}
+            onRefresh={modelUsage.refresh}
           />
         )}
       </main>

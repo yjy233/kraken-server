@@ -54,6 +54,45 @@ export interface WorkspaceFile {
   mediaType?: string
 }
 
+export interface ModelUsageCounters {
+  requestCount: number
+  responseCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  cachedTokens: number
+  cacheWriteTokens: number
+  reasoningTokens: number
+  cost: number
+  durationMs: number
+  toolUseCount: number
+}
+
+export interface ModelUsageModelStats extends ModelUsageCounters {
+  model: string
+  providerModels: string[]
+  usageFields: Record<string, number>
+  averageDurationMs: number | null
+  firstSeenAt: string | null
+  lastSeenAt: string | null
+  lastRequestAt: string | null
+  lastResponseAt: string | null
+  lastErrorAt: string | null
+}
+
+export interface ModelUsageSummary {
+  generatedAt: string
+  logPath: string
+  logBytes: number
+  parsedLineCount: number
+  skippedLineCount: number
+  modelCount: number
+  usageFieldKeys: string[]
+  totals: ModelUsageCounters
+  models: ModelUsageModelStats[]
+}
+
 export interface Session {
   id: string
   title: string

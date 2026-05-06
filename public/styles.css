@@ -854,6 +854,15 @@ body {
   padding: 24px;
 }
 
+.model-usage-panel {
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .workspace-panel {
   min-height: 0;
   overflow: hidden;
@@ -1570,6 +1579,201 @@ body {
   white-space: pre-wrap;
 }
 
+/* ─── Model Usage ────────────────────────────────── */
+
+.model-usage-toolbar,
+.model-usage-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.model-usage-toolbar h3,
+.model-usage-card-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.model-usage-toolbar p,
+.model-usage-card-header p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.model-usage-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.model-usage-metric,
+.model-usage-table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.model-usage-metric {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.model-usage-metric span,
+.model-usage-stamp {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.model-usage-metric strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.model-usage-table-card {
+  overflow: hidden;
+}
+
+.model-usage-card-header {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-usage-stamp {
+  white-space: nowrap;
+}
+
+.model-usage-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.model-usage-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.model-usage-table th,
+.model-usage-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.model-usage-table th:first-child,
+.model-usage-table td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+
+.model-usage-table th {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg);
+}
+
+.model-usage-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.model-usage-table tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.model-usage-model-cell {
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-usage-model-cell strong,
+.model-usage-fields-model strong {
+  color: var(--text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.model-usage-model-cell span,
+.model-usage-fields-model span,
+.model-usage-muted {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.model-usage-fields-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-usage-fields-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-usage-fields-row:last-child {
+  border-bottom: none;
+}
+
+.model-usage-fields-model {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-usage-field-chips {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.model-usage-field-chip {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.model-usage-field-chip span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-usage-field-chip strong {
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* ─── Markdown ───────────────────────────────────── */
 
 .message-body h1,
@@ -1752,7 +1956,8 @@ body {
     width: 100%;
   }
 
-  .scheduled-panel {
+  .scheduled-panel,
+  .model-usage-panel {
     padding: 16px;
   }
 
@@ -1776,16 +1981,24 @@ body {
 
   .scheduled-layout,
   .scheduled-field-row,
-  .scheduled-status-grid {
+  .scheduled-status-grid,
+  .model-usage-summary-grid,
+  .model-usage-fields-row {
     grid-template-columns: 1fr;
   }
 
   .scheduled-toolbar,
   .scheduled-card-header,
   .scheduled-job-header,
-  .scheduled-execution-main {
+  .scheduled-execution-main,
+  .model-usage-toolbar,
+  .model-usage-card-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .model-usage-stamp {
+    white-space: normal;
   }
 }
 

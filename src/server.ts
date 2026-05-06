@@ -33,6 +33,7 @@ import { isWsClientMessage } from './ws/protocol.js'
 import { createWorkspaceBrowserService } from './workspace/browser.js'
 import { readFeishuConfig, validateFeishuConfig } from './integrations/feishu/config.js'
 import { createFeishuService } from './integrations/feishu/service.js'
+import { summarizeModelUsageLog } from './logging/model-usage.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -259,6 +260,15 @@ app.get('/api/tools', (_req, res) => {
       input_schema: tool.input_schema,
     })),
   })
+})
+
+app.get('/api/model-usage', async (_req, res, next) => {
+  try {
+    const usage = await summarizeModelUsageLog()
+    res.json({ ok: true, ...usage })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.get('/api/workspace/tree', async (req, res, next) => {

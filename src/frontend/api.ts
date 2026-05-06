@@ -13,6 +13,7 @@ import type {
   SchedulerStatus,
   WorkspaceFile,
   WorkspaceListing,
+  ModelUsageSummary,
 } from './types.js'
 
 const BASE = ''
@@ -99,6 +100,10 @@ export async function fetchJobExecutions(jobId: string): Promise<ScheduledExecut
 
 export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return request('/api/scheduler/status')
+}
+
+export async function fetchModelUsage(): Promise<ModelUsageSummary> {
+  return request('/api/model-usage')
 }
 
 export async function fetchWorkspaceTree(params: {
