@@ -1,0 +1,65 @@
+{
+  "sourceSets": {
+    "cn-tech-default": [
+      "36kr",
+      "huxiu",
+      "jiemian",
+      "techcrunch"
+    ]
+  },
+  "sources": [
+    {
+      "id": "36kr",
+      "name": "36氪",
+      "enabled": true,
+      "category": "cn-tech",
+      "priority": 100,
+      "discoveryQueries": [
+        "site:36kr.com 36氪 最新 科技 创投",
+        "site:36kr.com 36氪 AI 最新"
+      ],
+      "entryUrls": [
+        "https://36kr.com/"
+      ]
+    },
+    {
+      "id": "huxiu",
+      "name": "虎嗅",
+      "enabled": true,
+      "category": "cn-tech",
+      "priority": 90,
+      "discoveryQueries": [
+        "site:huxiu.com 虎嗅 最新 科技 商业"
+      ],
+      "entryUrls": [
+        "https://www.huxiu.com/"
+      ]
+    },
+    {
+      "id": "jiemian",
+      "name": "界面新闻",
+      "enabled": true,
+      "category": "cn-business",
+      "priority": 80,
+      "discoveryQueries": [
+        "site:jiemian.com 界面新闻 最新 科技 商业"
+      ],
+      "entryUrls": [
+        "https://www.jiemian.com/"
+      ]
+    },
+    {
+      "id": "techcrunch",
+      "name": "TechCrunch",
+      "enabled": true,
+      "category": "global-tech",
+      "priority": 70,
+      "discoveryQueries": [
+        "site:techcrunch.com TechCrunch latest startups AI"
+      ],
+      "entryUrls": [
+        "https://techcrunch.com/"
+      ]
+    }
+  ]
+}

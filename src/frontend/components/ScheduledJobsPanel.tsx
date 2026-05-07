@@ -9,12 +9,21 @@ import type {
 type FormState = {
   name: string
   message: string
-  scheduleType: 'once' | 'interval'
+  scheduleType: 'once' | 'interval' | 'cron'
   runAtLocal: string
   everyMinutes: string
+  cronExpression: string
+  cronTimezone: string
   enabled: boolean
   sessionTemplateId: string
   overlapPolicy: 'skip' | 'parallel'
+  createNewSession: boolean
+  targetChatId: string
+  maxItems: string
+  sourceSet: string
+  catchupPolicy: 'none' | 'latest'
+  retryMaxAttempts: string
+  retryBackoffMinutes: string
 }
 
 interface ScheduledJobsPanelProps {
@@ -77,9 +86,12 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
       const everyMs = Number(form.everyMinutes) * 60_000
       return Number.isFinite(everyMs) && everyMs > 0 && everyMs < schedulerPollIntervalMs
     }
-    const runAt = new Date(form.runAtLocal).getTime()
-    const delayMs = runAt - Date.now()
-    return Number.isFinite(runAt) && delayMs > 0 && delayMs < schedulerPollIntervalMs
+    if (form.scheduleType === 'once') {
+      const runAt = new Date(form.runAtLocal).getTime()
+      const delayMs = runAt - Date.now()
+      return Number.isFinite(runAt) && delayMs > 0 && delayMs < schedulerPollIntervalMs
+    }
+    return false
   }, [form.everyMinutes, form.runAtLocal, form.scheduleType, schedulerPollIntervalMs])
 
   const updateForm = useCallback((patch: Partial<FormState>) => {
@@ -105,9 +117,18 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
       everyMinutes: job.schedule.type === 'interval'
         ? String(Math.max(1, Math.round(job.schedule.everyMs / 60_000)))
         : '60',
+      cronExpression: job.schedule.type === 'cron' ? job.schedule.expression : '30 8 * * *',
+      cronTimezone: job.schedule.type === 'cron' ? (job.schedule.timezone || 'Asia/Shanghai') : 'Asia/Shanghai',
       enabled: job.enabled,
       sessionTemplateId: job.sessionTemplateId || '',
       overlapPolicy: job.overlapPolicy === 'parallel' ? 'parallel' : 'skip',
+      createNewSession: job.createNewSession !== false,
+      targetChatId: typeof job.params?.targetChatId === 'string' ? job.params.targetChatId : '',
+      maxItems: job.params?.maxItems !== undefined ? String(job.params.maxItems) : '20',
+      sourceSet: typeof job.params?.sourceSet === 'string' ? job.params.sourceSet : 'cn-tech-default',
+      catchupPolicy: job.catchupPolicy === 'latest' ? 'latest' : 'none',
+      retryMaxAttempts: String(job.retryPolicy?.maxAttempts || 1),
+      retryBackoffMinutes: String(Math.max(0, Math.round((job.retryPolicy?.backoffMs || 0) / 60_000))),
     })
   }, [])
 
@@ -135,11 +156,6 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
       return
     }
 
-    if (editingJob?.sessionTemplateId && !form.sessionTemplateId.trim()) {
-      setFormError('Removing an existing session template is not supported yet.')
-      return
-    }
-
     let schedule: Record<string, unknown>
     if (form.scheduleType === 'once') {
       const runAt = new Date(form.runAtLocal)
@@ -151,7 +167,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
         type: 'once',
         runAt: runAt.toISOString(),
       }
-    } else {
+    } else if (form.scheduleType === 'interval') {
       const everyMinutes = Number(form.everyMinutes)
       if (!Number.isFinite(everyMinutes) || everyMinutes <= 0) {
         setFormError('Interval minutes must be a positive number.')
@@ -161,6 +177,34 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
         type: 'interval',
         everyMs: Math.round(everyMinutes * 60_000),
       }
+    } else {
+      const expression = form.cronExpression.trim()
+      if (!expression) {
+        setFormError('Cron expression is required.')
+        return
+      }
+      schedule = {
+        type: 'cron',
+        expression,
+        timezone: form.cronTimezone.trim() || 'Asia/Shanghai',
+      }
+    }
+
+    const maxItems = Number(form.maxItems)
+    if (!Number.isFinite(maxItems) || maxItems <= 0) {
+      setFormError('Max items must be a positive number.')
+      return
+    }
+
+    const retryMaxAttempts = Number(form.retryMaxAttempts)
+    const retryBackoffMinutes = Number(form.retryBackoffMinutes)
+    if (!Number.isFinite(retryMaxAttempts) || retryMaxAttempts <= 0) {
+      setFormError('Retry max attempts must be at least 1.')
+      return
+    }
+    if (!Number.isFinite(retryBackoffMinutes) || retryBackoffMinutes < 0) {
+      setFormError('Retry backoff minutes must be 0 or greater.')
+      return
     }
 
     const payload: Record<string, unknown> = {
@@ -169,6 +213,21 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
       enabled: form.enabled,
       schedule,
       overlapPolicy: form.overlapPolicy,
+      createNewSession: form.createNewSession,
+      catchupPolicy: form.catchupPolicy,
+      retryPolicy: {
+        maxAttempts: Math.round(retryMaxAttempts),
+        backoffMs: Math.round(retryBackoffMinutes * 60_000),
+      },
+      params: {
+        maxItems: Math.round(maxItems),
+        sourceSet: form.sourceSet.trim() || 'cn-tech-default',
+      },
+    }
+
+    const targetChatId = form.targetChatId.trim()
+    if (targetChatId) {
+      ;(payload.params as Record<string, unknown>).targetChatId = targetChatId
     }
     if (form.sessionTemplateId.trim()) {
       payload.sessionTemplateId = form.sessionTemplateId.trim()
@@ -182,12 +241,12 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
         await onCreateJob(payload)
       }
       resetForm()
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error))
+    } catch (submitError) {
+      setFormError(submitError instanceof Error ? submitError.message : String(submitError))
     } finally {
       setSubmitting(false)
     }
-  }, [editingJob?.sessionTemplateId, editingJobId, form, onCreateJob, onUpdateJob, resetForm])
+  }, [editingJobId, form, onCreateJob, onUpdateJob, resetForm])
 
   const handleToggleHistory = useCallback(async (jobId: string) => {
     if (expandedJobId === jobId) {
@@ -239,8 +298,8 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
             <div>
               <h3>{editingJobId ? 'Edit Job' : 'New Job'}</h3>
               <p>
-                Each job reuses one fixed session. Template sessions copy prompt, model,
-                sandbox, and loaded skills when that target session is first established.
+                Configure a scheduled agent run. Daily digest jobs should prefer cron,
+                `createNewSession`, and skill-driven instructions in the message.
               </p>
             </div>
             {editingJobId && (
@@ -256,7 +315,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
               <input
                 className="scheduled-input"
                 type="text"
-                placeholder="daily-briefing"
+                placeholder="daily-feishu-news-digest"
                 value={form.name}
                 onChange={(event) => updateForm({ name: event.target.value })}
               />
@@ -266,7 +325,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
               <span>Message</span>
               <textarea
                 className="scheduled-textarea"
-                rows={5}
+                rows={6}
                 placeholder="Ask the agent what to do when this job fires."
                 value={form.message}
                 onChange={(event) => updateForm({ message: event.target.value })}
@@ -283,6 +342,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                 >
                   <option value="once">Once</option>
                   <option value="interval">Interval</option>
+                  <option value="cron">Cron</option>
                 </select>
               </label>
 
@@ -296,7 +356,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                     onChange={(event) => updateForm({ runAtLocal: event.target.value })}
                   />
                 </label>
-              ) : (
+              ) : form.scheduleType === 'interval' ? (
                 <label className="scheduled-field">
                   <span>Every Minutes</span>
                   <input
@@ -308,8 +368,32 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                     onChange={(event) => updateForm({ everyMinutes: event.target.value })}
                   />
                 </label>
+              ) : (
+                <label className="scheduled-field">
+                  <span>Cron</span>
+                  <input
+                    className="scheduled-input"
+                    type="text"
+                    placeholder="30 8 * * *"
+                    value={form.cronExpression}
+                    onChange={(event) => updateForm({ cronExpression: event.target.value })}
+                  />
+                </label>
               )}
             </div>
+
+            {form.scheduleType === 'cron' && (
+              <label className="scheduled-field">
+                <span>Timezone</span>
+                <input
+                  className="scheduled-input"
+                  type="text"
+                  placeholder="Asia/Shanghai"
+                  value={form.cronTimezone}
+                  onChange={(event) => updateForm({ cronTimezone: event.target.value })}
+                />
+              </label>
+            )}
 
             <label className="scheduled-field">
               <span>Session Template</span>
@@ -354,6 +438,17 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                 <span>Enabled</span>
               </label>
 
+              <label className="scheduled-toggle">
+                <input
+                  type="checkbox"
+                  checked={form.createNewSession}
+                  onChange={(event) => updateForm({ createNewSession: event.target.checked })}
+                />
+                <span>Create new session</span>
+              </label>
+            </div>
+
+            <div className="scheduled-field-row">
               <label className="scheduled-field">
                 <span>Overlap</span>
                 <select
@@ -365,6 +460,80 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                   <option value="parallel">Run in parallel</option>
                 </select>
               </label>
+
+              <label className="scheduled-field">
+                <span>Catchup</span>
+                <select
+                  className="scheduled-select"
+                  value={form.catchupPolicy}
+                  onChange={(event) => updateForm({ catchupPolicy: event.target.value as FormState['catchupPolicy'] })}
+                >
+                  <option value="none">None</option>
+                  <option value="latest">Latest</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="scheduled-field-row">
+              <label className="scheduled-field">
+                <span>Target Chat ID</span>
+                <input
+                  className="scheduled-input"
+                  type="text"
+                  placeholder="oc_xxx"
+                  value={form.targetChatId}
+                  onChange={(event) => updateForm({ targetChatId: event.target.value })}
+                />
+              </label>
+
+              <label className="scheduled-field">
+                <span>Max Items</span>
+                <input
+                  className="scheduled-input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={form.maxItems}
+                  onChange={(event) => updateForm({ maxItems: event.target.value })}
+                />
+              </label>
+            </div>
+
+            <label className="scheduled-field">
+              <span>Source Set</span>
+              <input
+                className="scheduled-input"
+                type="text"
+                placeholder="cn-tech-default"
+                value={form.sourceSet}
+                onChange={(event) => updateForm({ sourceSet: event.target.value })}
+              />
+            </label>
+
+            <div className="scheduled-field-row">
+              <label className="scheduled-field">
+                <span>Retry Attempts</span>
+                <input
+                  className="scheduled-input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={form.retryMaxAttempts}
+                  onChange={(event) => updateForm({ retryMaxAttempts: event.target.value })}
+                />
+              </label>
+
+              <label className="scheduled-field">
+                <span>Retry Backoff Minutes</span>
+                <input
+                  className="scheduled-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.retryBackoffMinutes}
+                  onChange={(event) => updateForm({ retryBackoffMinutes: event.target.value })}
+                />
+              </label>
             </div>
 
             {hasShortIntervalWarning && (
@@ -374,7 +543,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
             )}
 
             <div className="scheduled-note">
-              Current frontend supports `once` and `interval`. Daily fixed-time scheduling is not implemented yet.
+              Cron format uses 5 fields: minute hour day-of-month month day-of-week.
             </div>
 
             {formError && <div className="scheduled-inline-error">{formError}</div>}
@@ -407,7 +576,12 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
             <StatusCard label="Scheduler" value={schedulerEnabled ? 'Enabled' : 'Disabled'} />
             <StatusCard label="Jobs" value={String(status?.jobCount ?? jobs.length)} />
             <StatusCard label="Running" value={String(status?.runningJobs ?? 0)} />
-            <StatusCard label="Next Wake" value={status?.nextWakeAt ? formatDateTime(status.nextWakeAt) : 'None'} />
+            <StatusCard label="Next Scan" value={status?.nextWakeAt ? formatDateTime(status.nextWakeAt) : 'None'} />
+            <StatusCard label="Next Job" value={status?.nextJobRunAt ? formatDateTime(status.nextJobRunAt) : 'None'} />
+          </div>
+
+          <div className="scheduled-note">
+            `Next Scan` is the scheduler poll time. `Next Job` is the earliest planned job trigger time.
           </div>
 
           {!schedulerEnabled && (
@@ -422,7 +596,7 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
             {jobs.length === 0 ? (
               <div className="scheduled-empty">
                 <h4>No scheduled jobs yet</h4>
-                <p>Create one from the form. Each run will create a separate session you can inspect later.</p>
+                <p>Create one from the form. Daily digest jobs should prefer cron and create-new-session mode.</p>
               </div>
             ) : (
               jobs.map((job) => {
@@ -431,6 +605,8 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                 const isPending = pendingJobIds.includes(job.id)
                 const templateSession = job.sessionTemplateId ? sessionsById.get(job.sessionTemplateId) : null
                 const targetSession = job.targetSessionId ? sessionsById.get(job.targetSessionId) : null
+                const latestExecution = executions[0] || null
+                const isRunning = latestExecution?.status === 'queued' || latestExecution?.status === 'running'
 
                 return (
                   <article key={job.id} className="scheduled-job-card">
@@ -449,9 +625,18 @@ export const ScheduledJobsPanel: React.FC<ScheduledJobsPanelProps> = ({
                     <div className="scheduled-job-meta">
                       <span>Next: {job.nextRunAt ? formatDateTime(job.nextRunAt) : 'None'}</span>
                       <span>Last success: {job.lastSuccessAt ? formatDateTime(job.lastSuccessAt) : 'Never'}</span>
+                      <span>Last run: {job.lastRunAt ? formatDateTime(job.lastRunAt) : 'Never'}</span>
                       <span>Template: {templateSession?.title || (job.sessionTemplateId ? shortId(job.sessionTemplateId) : 'None')}</span>
-                      <span>Target: {targetSession?.title || (job.targetSessionId ? shortId(job.targetSessionId) : 'Pending')}</span>
+                      <span>Session mode: {job.createNewSession === false ? 'Reuse' : 'New each run'}</span>
+                      {job.params?.targetChatId && <span>Chat: {String(job.params.targetChatId)}</span>}
+                      {targetSession && <span>Target: {targetSession.title}</span>}
                     </div>
+
+                    {isRunning && (
+                      <div className="scheduled-note">
+                        This job has been triggered and is still running. Check History for the live execution status.
+                      </div>
+                    )}
 
                     <div className="scheduled-job-actions">
                       <button className="icon-button" type="button" onClick={() => editJob(job)} disabled={isPending}>
@@ -541,12 +726,21 @@ function createDefaultForm(sessionTemplateId?: string | null): FormState {
   return {
     name: '',
     message: '',
-    scheduleType: 'once',
+    scheduleType: 'cron',
     runAtLocal: toDatetimeLocalValue(new Date(Date.now() + 30 * 60_000).toISOString()),
     everyMinutes: '60',
+    cronExpression: '30 8 * * *',
+    cronTimezone: 'Asia/Shanghai',
     enabled: true,
     sessionTemplateId: sessionTemplateId || '',
     overlapPolicy: 'skip',
+    createNewSession: true,
+    targetChatId: '',
+    maxItems: '20',
+    sourceSet: 'cn-tech-default',
+    catchupPolicy: 'none',
+    retryMaxAttempts: '1',
+    retryBackoffMinutes: '0',
   }
 }
 
@@ -560,7 +754,10 @@ function formatSchedule(schedule: ScheduledJob['schedule']): string {
   if (schedule.type === 'once') {
     return `Once at ${formatDateTime(schedule.runAt)}`
   }
-  return `Every ${formatDurationMs(schedule.everyMs)}`
+  if (schedule.type === 'interval') {
+    return `Every ${formatDurationMs(schedule.everyMs)}`
+  }
+  return `Cron ${schedule.expression}${schedule.timezone ? ` (${schedule.timezone})` : ''}`
 }
 
 function formatDurationMs(value: number): string {

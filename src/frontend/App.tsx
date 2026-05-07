@@ -231,7 +231,7 @@ export default function App() {
               <div className="scheduled-header-copy">
                 <h2>Scheduled Jobs</h2>
                 <p>
-                  Create one-off and interval jobs. Each job runs inside one fixed session and can bootstrap from a template session.
+                  Create one-off, interval, and cron jobs. Jobs can bootstrap from a template session and optionally create a fresh session on each run.
                 </p>
               </div>
             ) : (

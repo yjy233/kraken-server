@@ -3,6 +3,7 @@ import type { SessionSandboxConfig } from '../tools/types.js'
 export type ScheduledJobSchedule =
   | { type: 'once'; runAt: string }
   | { type: 'interval'; everyMs: number }
+  | { type: 'cron'; expression: string; timezone?: string }
 
 export interface ScheduledJob {
   id: string
@@ -15,6 +16,13 @@ export interface ScheduledJob {
   systemPrompt?: string
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
+  createNewSession?: boolean | undefined
+  params?: Record<string, string | number | boolean> | undefined
+  catchupPolicy?: 'none' | 'latest' | undefined
+  retryPolicy?: {
+    maxAttempts: number
+    backoffMs: number
+  } | undefined
   schedule: ScheduledJobSchedule
   nextRunAt: string | null
   lastRunAt?: string | null
@@ -50,4 +58,5 @@ export interface SchedulerStatus {
   runningJobs: number
   jobCount: number
   nextWakeAt: string | null
+  nextJobRunAt: string | null
 }

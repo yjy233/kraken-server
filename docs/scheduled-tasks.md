@@ -1055,21 +1055,22 @@ src/scheduler/service.ts
 - 抽 `agent-service`
 - 定义 job / execution types
 - 文件存储
-- interval / once 调度
+- `once` / `interval` / `cron`
+- `timezone`
+- `createNewSession`
 - 手动 run
 - 列表 / 详情 API
 
 ### Phase 2
 
-- cron 表达式
 - retry policy
 - overlap policy
+- catchup policy
 - execution retention
 - 前端任务面板
 
 ### Phase 3
 
-- catchup policy
 - leader lock
 - job metrics
 - webhook / 通知
@@ -1081,14 +1082,15 @@ src/scheduler/service.ts
 1. 不要上来就接 Redis / BullMQ / Temporal
 2. 先做“单进程 + 文件持久化 + 轮询调度”
 3. 先把 agent runtime 抽成可复用 service
-4. 先支持 `once` 和 `interval`
-5. `cron` 放第二阶段
+4. 第一版就支持 `cron + timezone`
+5. 明确 job 级 `createNewSession`
 
 原因很简单：
 
 - 你现在的服务架构本来就是单进程、文件持久化导向
 - 先把系统边界做清楚，比引入大而重的依赖更重要
 - 调度系统一旦做错，后面很难修
+- 对“每天早上推送日报”这类任务，`interval=24h` 不是正确语义，`cron + timezone` 才是
 
 ## 24. 一句话结论
 

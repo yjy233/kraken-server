@@ -1,0 +1,5 @@
+{
+  "name": "news-digest-feishu",
+  "displayName": "News Digest Feishu",
+  "description": "Collect recent portal news, summarize in Chinese, and deliver a daily digest to Feishu."
+}

@@ -25,6 +25,7 @@ import { createSessionStore } from './runtime/session-store.js'
 import { createAgentService } from './runtime/agent-service.js'
 import { createSchedulerStore } from './scheduler/store.js'
 import { computeNextRunAt } from './scheduler/planner.js'
+import { validateTimezone } from './scheduler/cron.js'
 import { createSchedulerService } from './scheduler/service.js'
 import type { ScheduledJob, ScheduledJobSchedule } from './scheduler/types.js'
 import { createWsHub } from './ws/hub.js'
@@ -179,18 +180,21 @@ const schedulerService = createSchedulerService({
       type: 'scheduler:execution-created',
       execution,
     })
+    void broadcastSchedulerSnapshot()
   },
   onExecutionUpdated: (execution) => {
     wsHub.broadcastScheduler({
       type: 'scheduler:execution-updated',
       execution,
     })
+    void broadcastSchedulerSnapshot()
   },
   onJobUpdated: (job) => {
     wsHub.broadcastScheduler({
       type: 'scheduler:job-updated',
       job,
     })
+    void broadcastSchedulerSnapshot()
   },
 })
 
@@ -906,6 +910,18 @@ function buildScheduledJobInput(body: unknown): Omit<ScheduledJob, 'id' | 'creat
   if (Array.isArray(record.loadedSkills)) {
     job.loadedSkills = record.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
   }
+  if (typeof record.createNewSession === 'boolean') {
+    job.createNewSession = record.createNewSession
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'params')) {
+    job.params = normalizeScheduledJobParams(record.params)
+  }
+  if (record.catchupPolicy === 'latest' || record.catchupPolicy === 'none') {
+    job.catchupPolicy = record.catchupPolicy
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'retryPolicy')) {
+    job.retryPolicy = normalizeRetryPolicy(record.retryPolicy)
+  }
   return job
 }
 
@@ -949,6 +965,18 @@ function buildScheduledJobPatch(
   if (Array.isArray(record.loadedSkills)) {
     patch.loadedSkills = record.loadedSkills.map((item) => String(item).trim()).filter(Boolean)
   }
+  if (typeof record.createNewSession === 'boolean') {
+    patch.createNewSession = record.createNewSession
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'params')) {
+    patch.params = normalizeScheduledJobParams(record.params)
+  }
+  if (record.catchupPolicy === 'latest' || record.catchupPolicy === 'none') {
+    patch.catchupPolicy = record.catchupPolicy
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'retryPolicy')) {
+    patch.retryPolicy = normalizeRetryPolicy(record.retryPolicy)
+  }
   if (typeof record.enabled === 'boolean') {
     patch.enabled = record.enabled
   }
@@ -986,7 +1014,50 @@ function normalizeSchedule(value: unknown): ScheduledJobSchedule {
     }
     return { type: 'interval', everyMs }
   }
+  if (type === 'cron') {
+    const expression = String(record.expression || '').trim()
+    if (!expression) {
+      throw new Error('schedule.expression is required for cron jobs')
+    }
+    const timezone = typeof record.timezone === 'string' && record.timezone.trim()
+      ? validateTimezone(record.timezone.trim())
+      : undefined
+    return timezone
+      ? { type: 'cron', expression, timezone }
+      : { type: 'cron', expression }
+  }
   throw new Error(`Unsupported schedule type: ${type}`)
+}
+
+function normalizeScheduledJobParams(value: unknown): Record<string, string | number | boolean> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const params = Object.fromEntries(
+    Object.entries(record).filter(([, item]) => {
+      return typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean'
+    }).map(([key, item]) => [key, item as string | number | boolean])
+  )
+
+  return Object.keys(params).length > 0 ? params : undefined
+}
+
+function normalizeRetryPolicy(value: unknown): ScheduledJob['retryPolicy'] {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+  const record = value as Record<string, unknown>
+  const maxAttempts = parseInteger(record.maxAttempts, 0)
+  const backoffMs = parseInteger(record.backoffMs, 0)
+  if (maxAttempts <= 0) {
+    return undefined
+  }
+  return {
+    maxAttempts,
+    backoffMs: Math.max(0, backoffMs),
+  }
 }
 
 function initSse(res: express.Response) {
