@@ -92,6 +92,8 @@ export function createAgentService(config: AgentServiceConfig) {
     return [
       buildSystemPrompt(basePrompt, tools),
       '',
+      buildRuntimeDateContext(),
+      '',
       buildSandboxPromptContext(sandboxPolicy),
     ].join('\n')
   }
@@ -307,4 +309,15 @@ function appendSystemPromptSuffix(basePrompt: string, suffix: string | undefined
     return basePrompt
   }
   return `${basePrompt.trim()}\n\n${trimmedSuffix}`
+}
+
+function buildRuntimeDateContext(now = new Date()): string {
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  const day = now.getDate()
+
+  return [
+    '## Runtime Context',
+    `- Current date: ${year}年${month}月${day}日`,
+  ].join('\n')
 }
