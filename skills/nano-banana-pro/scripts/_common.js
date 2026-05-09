@@ -28,7 +28,7 @@ export function parseArgs(argv) {
     }
     const key = token.slice(2)
     const next = argv[index + 1]
-    if (!next || next.startsWith('--')) {
+    if (next === undefined || next.startsWith('--')) {
       args[key] = true
       continue
     }
@@ -73,6 +73,9 @@ export function resolveApiKey(args) {
 
 export function resolveProxyUrl(args) {
   if (args.proxy !== undefined) {
+    if (args.proxy === true) {
+      fail('Missing value for --proxy. Use --proxy "http://host:port" or --proxy "" to disable proxy for one run.')
+    }
     const proxy = String(args.proxy).trim()
     return proxy || null
   }

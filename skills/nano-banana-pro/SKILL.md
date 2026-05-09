@@ -88,7 +88,7 @@ If neither is available, the script exits with an error message.
   - `No API key provided.` → set `OPENROUTER_API_KEY` / `OPENROUTER_KEY` in `.env` or `.env.local`
   - `Error loading input image:` → wrong path / unreadable file; verify `--input-image` points to a real image
   - Proxy support requires installed dependencies including `undici`; run `npm install` first
-  - DNS / TLS / timeout errors in sandboxed execution → keep the local proxy running at `http://127.0.0.1:7897`, or pass `--proxy` / set `NANO_BANANA_PROXY`
+- DNS / TLS / timeout errors in sandboxed execution → keep the local proxy running at `http://127.0.0.1:7897`, or pass `--proxy "http://127.0.0.1:7897"` / set `NANO_BANANA_PROXY`
   - “quota/permission/403” style API errors → wrong key, no access, or quota exceeded; try a different key/account
 
 ## Filename Generation
