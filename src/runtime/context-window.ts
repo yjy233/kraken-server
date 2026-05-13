@@ -349,6 +349,9 @@ function historyMessageToText(message: HistoryMessage): string {
     if (block.type === 'tool_use') {
       return `Tool call ${block.name}: ${JSON.stringify(block.input)}`
     }
+    if (block.type === 'image') {
+      return `[image${block.filename ? `: ${block.filename}` : ''}]`
+    }
     const label = block.tool_name || block.tool_use_id
     const status = block.is_error ? 'error' : 'ok'
     return `Tool result ${label} (${status}): ${block.content}`

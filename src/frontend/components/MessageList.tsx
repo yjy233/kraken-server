@@ -384,6 +384,15 @@ const MessageContentBlock: React.FC<{
     )
   }
 
+  if (block.type === 'image') {
+    return (
+      <figure className="message-image-block">
+        <img src={block.image} alt={block.filename || 'User uploaded image'} />
+        {block.filename && <figcaption>{block.filename}</figcaption>}
+      </figure>
+    )
+  }
+
   return (
     <ToolDetailItem
       title={block.tool_name || block.tool_use_id}

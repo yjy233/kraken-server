@@ -4,7 +4,7 @@
  * 支持任意 OpenRouter 上的模型（如 anthropic/claude-sonnet-4、openai/gpt-4o 等）。
  */
 
-import { generateText, jsonSchema, type Tool, type ModelMessage, type TextPart, type ToolCallPart, type ToolResultPart } from 'ai'
+import { generateText, jsonSchema, type Tool, type ModelMessage, type TextPart, type ImagePart, type ToolCallPart, type ToolResultPart } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import type { AgentMessage, AgentContentBlock, ToolDefinition, ModelResponse, ToolResultBlock, ToolUseBlock } from './types.js'
 import { appendModelLog } from '../logging/file-logger.js'
@@ -96,9 +96,21 @@ function convertMessages(messages: AgentMessage[]): ModelMessage[] {
       if (typeof msg.content === 'string') {
         result.push({ role: 'user', content: msg.content })
       } else {
+        const userParts: Array<TextPart | ImagePart> = []
         const toolResults: ToolResultPart[] = []
         for (const block of msg.content as AgentContentBlock[]) {
-          if (block.type === 'tool_result') {
+          if (block.type === 'text') {
+            userParts.push({ type: 'text', text: block.text })
+          } else if (block.type === 'image') {
+            const imagePart: ImagePart = {
+              type: 'image',
+              image: block.image,
+            }
+            if (block.mediaType) {
+              imagePart.mediaType = block.mediaType
+            }
+            userParts.push(imagePart)
+          } else if (block.type === 'tool_result') {
             toolResults.push({
               type: 'tool-result',
               toolCallId: block.tool_use_id,
@@ -108,6 +120,9 @@ function convertMessages(messages: AgentMessage[]): ModelMessage[] {
                 : { type: 'text', value: block.content },
             })
           }
+        }
+        if (userParts.length > 0) {
+          result.push({ role: 'user', content: userParts })
         }
         if (toolResults.length > 0) {
           result.push({ role: 'tool', content: toolResults })

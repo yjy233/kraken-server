@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Sidebar } from './components/Sidebar.js'
 import { MessageList } from './components/MessageList.js'
 import { Composer } from './components/Composer.js'
+import type { ImageBlock } from './types.js'
 import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
 import { WorkspacePanel } from './components/WorkspacePanel.js'
 import { ModelUsagePanel } from './components/ModelUsagePanel.js'
@@ -106,8 +107,8 @@ export default function App() {
   }, [chat, sessions])
 
   const handleSend = useCallback(
-    (message: string) => {
-      chat.send(message, systemPrompt, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput))
+    (message: string, images: ImageBlock[]) => {
+      chat.send(message, systemPrompt, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput), images)
     },
     [chat, systemPrompt, effectiveWorkspaceRoot, readRootsInput]
   )

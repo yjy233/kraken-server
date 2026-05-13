@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import type { ToolDefinition, AgentMessage, EmitFn, RunResult } from '../agent/types.js'
+import type { ToolDefinition, AgentMessage, AgentContentBlock, EmitFn, RunResult } from '../agent/types.js'
 import { ReActAgent } from '../agent/react-agent.js'
 import { createToolRegistry, type CreateRegistryOptions } from '../tools/registry.js'
 import {
@@ -50,6 +50,7 @@ export interface RunAgentServiceRequest {
   systemPrompt?: string
   systemPromptSuffix?: string
   message: string
+  content?: AgentContentBlock[] | undefined
   model?: string
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
@@ -111,13 +112,17 @@ export function createAgentService(config: AgentServiceConfig) {
   async function runRequest(body: unknown, emit: EmitFn | null): Promise<RunAgentServiceResult> {
     const payload = isRecord(body) ? body : {}
     const rawMessage = typeof payload.message === 'string' ? payload.message.trim() : ''
-    if (!rawMessage) {
+    const content = normalizeRequestContent(payload.content, rawMessage)
+    if (!rawMessage && !contentHasUserInput(content)) {
       throw new Error('message is required')
     }
 
     const request: RunAgentServiceRequest = {
       sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : null,
       message: rawMessage,
+    }
+    if (content) {
+      request.content = content
     }
     if (typeof payload.systemPrompt === 'string') {
       request.systemPrompt = payload.systemPrompt
@@ -138,9 +143,12 @@ export function createAgentService(config: AgentServiceConfig) {
 
   async function run(input: RunAgentServiceRequest, emit: EmitFn | null): Promise<RunAgentServiceResult> {
     const rawMessage = String(input.message || '').trim()
-    if (!rawMessage) {
+    const inputContent = normalizeRequestContent(input.content, rawMessage)
+    if (!rawMessage && !contentHasUserInput(inputContent)) {
       throw new Error('message is required')
     }
+    const userContent = inputContent || rawMessage
+    const titleText = rawMessage || contentPreview(userContent)
 
     const requestedModel = typeof input.model === 'string' && input.model.trim()
       ? input.model.trim()
@@ -162,7 +170,7 @@ export function createAgentService(config: AgentServiceConfig) {
         sandbox?: SessionSandboxConfig | undefined
         loadedSkills?: string[] | undefined
       } = {
-        title: input.title || sanitizeTitle(rawMessage),
+        title: input.title || sanitizeTitle(titleText),
         model: requestedModel,
       }
       if (input.forceSessionId) {
@@ -216,14 +224,14 @@ export function createAgentService(config: AgentServiceConfig) {
     const userMessage: SessionMessageRecord = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: rawMessage,
+      content: userContent,
       createdAt: new Date().toISOString(),
       meta: input.messageMeta,
     }
     session.messages.push(userMessage)
     session.updatedAt = new Date().toISOString()
     if (session.messages.filter((message) => message.role === 'user').length === 1) {
-      session.title = sanitizeTitle(rawMessage) || session.title
+      session.title = sanitizeTitle(titleText) || session.title
     }
 
     emit?.('session', {
@@ -309,6 +317,83 @@ function appendSystemPromptSuffix(basePrompt: string, suffix: string | undefined
     return basePrompt
   }
   return `${basePrompt.trim()}\n\n${trimmedSuffix}`
+}
+
+function normalizeRequestContent(value: unknown, fallbackText: string): AgentContentBlock[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const blocks: AgentContentBlock[] = []
+  for (const block of value) {
+    if (!block || typeof block !== 'object') {
+      continue
+    }
+    const record = block as Record<string, unknown>
+    if (record.type === 'text' && typeof record.text === 'string') {
+      blocks.push({ type: 'text', text: record.text })
+      continue
+    }
+    if (record.type === 'image' && typeof record.image === 'string') {
+      const image = record.image.trim()
+      if (!isAllowedImageSource(image)) {
+        continue
+      }
+      const imageBlock: AgentContentBlock = {
+        type: 'image',
+        image,
+      }
+      if (typeof record.mediaType === 'string' && isAllowedImageMediaType(record.mediaType)) {
+        imageBlock.mediaType = record.mediaType.trim().toLowerCase()
+      }
+      if (typeof record.filename === 'string' && record.filename.trim()) {
+        imageBlock.filename = record.filename.trim().slice(0, 160)
+      }
+      blocks.push(imageBlock)
+    }
+  }
+
+  if (!blocks.some((block) => block.type === 'text') && fallbackText) {
+    blocks.unshift({ type: 'text', text: fallbackText })
+  }
+
+  return blocks.length > 0 ? blocks : undefined
+}
+
+function contentHasUserInput(content: AgentContentBlock[] | undefined): boolean {
+  return Boolean(content?.some((block) => {
+    if (block.type === 'text') {
+      return block.text.trim().length > 0
+    }
+    return block.type === 'image'
+  }))
+}
+
+function contentPreview(content: string | AgentContentBlock[]): string {
+  if (typeof content === 'string') {
+    return content
+  }
+  return content.map((block) => {
+    if (block.type === 'text') {
+      return block.text
+    }
+    if (block.type === 'image') {
+      return `[image${block.filename ? `: ${block.filename}` : ''}]`
+    }
+    if (block.type === 'tool_use') {
+      return `Tool call ${block.name}`
+    }
+    return `Tool result ${block.tool_name || block.tool_use_id}`
+  }).join(' ').trim()
+}
+
+function isAllowedImageSource(value: string): boolean {
+  return /^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(value)
+    || /^https?:\/\//i.test(value)
+}
+
+function isAllowedImageMediaType(value: string): boolean {
+  return /^image\/(png|jpe?g|webp|gif)$/i.test(value.trim())
 }
 
 function buildRuntimeDateContext(now = new Date()): string {

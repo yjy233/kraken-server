@@ -322,6 +322,24 @@ function normalizeMessageContent(value: unknown): SessionMessageContent | null {
       blocks.push({ type: 'text', text: record.text })
       continue
     }
+    if (record.type === 'image' && typeof record.image === 'string') {
+      const image = record.image.trim()
+      if (!isAllowedImageSource(image)) {
+        continue
+      }
+      const imageBlock: AgentContentBlock = {
+        type: 'image',
+        image,
+      }
+      if (typeof record.mediaType === 'string' && isAllowedImageMediaType(record.mediaType)) {
+        imageBlock.mediaType = record.mediaType.trim().toLowerCase()
+      }
+      if (typeof record.filename === 'string' && record.filename.trim()) {
+        imageBlock.filename = record.filename.trim().slice(0, 160)
+      }
+      blocks.push(imageBlock)
+      continue
+    }
     if (
       record.type === 'tool_use' &&
       typeof record.id === 'string' &&
@@ -369,7 +387,19 @@ function messageContentPreview(content: SessionMessageContent): string {
     if (block.type === 'tool_use') {
       return `Tool call ${block.name}: ${JSON.stringify(block.input)}`
     }
+    if (block.type === 'image') {
+      return `[image${block.filename ? `: ${block.filename}` : ''}]`
+    }
     const label = block.tool_name || block.tool_use_id
     return `Tool result ${label}: ${block.content}`
   }).join('\n')
+}
+
+function isAllowedImageSource(value: string): boolean {
+  return /^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(value)
+    || /^https?:\/\//i.test(value)
+}
+
+function isAllowedImageMediaType(value: string): boolean {
+  return /^image\/(png|jpe?g|webp|gif)$/i.test(value.trim())
 }

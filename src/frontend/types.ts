@@ -145,11 +145,18 @@ export interface SessionMessage {
 
 export type SessionMessageContent = string | AgentContentBlock[]
 
-export type AgentContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+export type AgentContentBlock = TextBlock | ImageBlock | ToolUseBlock | ToolResultBlock
 
 export interface TextBlock {
   type: 'text'
   text: string
+}
+
+export interface ImageBlock {
+  type: 'image'
+  image: string
+  mediaType?: string
+  filename?: string
 }
 
 export interface ToolUseBlock {

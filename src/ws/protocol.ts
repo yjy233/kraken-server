@@ -1,4 +1,4 @@
-import type { Session } from '../frontend/types.js'
+import type { AgentContentBlock, Session } from '../frontend/types.js'
 import type { RunResult } from '../agent/types.js'
 import type { ScheduledExecution, ScheduledJob, SchedulerStatus } from '../scheduler/types.js'
 
@@ -14,6 +14,7 @@ export type WsClientMessage =
         sessionId: string | null
         systemPrompt: string
         message: string
+        content?: AgentContentBlock[]
         model?: string
         sandbox?: {
           workspaceRoot?: string

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { Session, SessionMessage, RuntimeEvent, SessionSandboxConfig, ContextWindowState } from '../types.js'
+import type { AgentContentBlock, ImageBlock, Session, SessionMessage, RuntimeEvent, SessionSandboxConfig, ContextWindowState } from '../types.js'
 import { wsClient } from '../ws-client.js'
 import type { WsServerMessage } from '../../ws/protocol.js'
 import { createRequestId } from '../utils/request-id.js'
@@ -75,8 +75,9 @@ export function useChat(
   }, [onSessionUpdate, onSessionsRefresh, onContextWindowUpdate])
 
   const send = useCallback(
-    async (message: string, systemPrompt: string, sandbox?: SessionSandboxConfig) => {
-      if (!message.trim()) return
+    async (message: string, systemPrompt: string, sandbox?: SessionSandboxConfig, images: ImageBlock[] = []) => {
+      const trimmedMessage = message.trim()
+      if (!trimmedMessage && images.length === 0) return
 
       setState({
         sending: true,
@@ -84,17 +85,18 @@ export function useChat(
         runtimeEvents: [],
       })
 
-      // 乐观插入用户消息到当前会话
+      const content = buildUserContent(trimmedMessage, images)
+
       const optimisticUserMsg: SessionMessage = {
         id: `optimistic-user-${Date.now()}`,
         role: 'user',
-        content: message,
+        content: content || trimmedMessage,
         createdAt: new Date().toISOString(),
       }
 
       const baseSession: Session = activeSession || {
         id: 'pending',
-        title: message.slice(0, 60) || 'New chat',
+        title: trimmedMessage.slice(0, 60) || (images.length > 0 ? 'Image message' : 'New chat'),
         model: '',
         systemPrompt,
         sandbox,
@@ -110,11 +112,15 @@ export function useChat(
         sessionId: string | null
         systemPrompt: string
         message: string
+        content?: AgentContentBlock[]
         sandbox?: SessionSandboxConfig
       } = {
         sessionId: activeSession?.id || null,
         systemPrompt: systemPrompt.trim(),
-        message: message.trim(),
+        message: trimmedMessage,
+      }
+      if (content) {
+        payload.content = content
       }
       if (sandbox !== undefined) {
         payload.sandbox = sandbox
@@ -148,4 +154,16 @@ export function useChat(
   }, [])
 
   return { ...state, send, cancel, clearError }
+}
+
+function buildUserContent(message: string, images: ImageBlock[]): AgentContentBlock[] | undefined {
+  if (images.length === 0) {
+    return undefined
+  }
+  const blocks: AgentContentBlock[] = []
+  if (message) {
+    blocks.push({ type: 'text', text: message })
+  }
+  blocks.push(...images)
+  return blocks
 }

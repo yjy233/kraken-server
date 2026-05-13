@@ -44,6 +44,7 @@ const SESSION_DIR = path.join(ROOT_DIR, '.sessions')
 const SCHEDULED_JOBS_DIR = path.join(ROOT_DIR, '.scheduled-jobs')
 const MAX_MARKDOWN_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_WORKSPACE_UPLOAD_BYTES = 25 * 1024 * 1024
+const MAX_CHAT_JSON_BYTES = '20mb'
 const MARKDOWN_IMAGE_CONTENT_TYPES = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
@@ -210,7 +211,7 @@ const feishuService = createFeishuService({
 
 const app = express()
 app.disable('x-powered-by')
-app.use(express.json({ limit: '3mb' }))
+app.use(express.json({ limit: MAX_CHAT_JSON_BYTES }))
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }))
 
 app.get('/api/health', async (_req, res) => {

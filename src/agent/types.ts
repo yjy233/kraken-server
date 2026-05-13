@@ -68,6 +68,14 @@ export interface TextBlock {
   text: string
 }
 
+/** User-supplied image block */
+export interface ImageBlock {
+  type: 'image'
+  image: string
+  mediaType?: string
+  filename?: string
+}
+
 /** 模型请求使用工具的块 */
 export interface ToolUseBlock {
   type: 'tool_use'
@@ -85,8 +93,8 @@ export interface ToolResultBlock {
   is_error: boolean
 }
 
-/** Agent 消息内容块：文本 / 请求工具 / 返回工具结果 */
-export type AgentContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+/** Agent 消息内容块：文本 / 图片 / 请求工具 / 返回工具结果 */
+export type AgentContentBlock = TextBlock | ImageBlock | ToolUseBlock | ToolResultBlock
 
 /** Agent 消息结构，content 可以是纯文本或结构化块数组 */
 export interface AgentMessage {

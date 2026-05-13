@@ -14,6 +14,7 @@ import type {
   WorkspaceFile,
   WorkspaceListing,
   ModelUsageSummary,
+  AgentContentBlock,
 } from './types.js'
 
 const BASE = ''
@@ -221,6 +222,7 @@ export interface ChatPayload {
   sessionId: string | null
   systemPrompt: string
   message: string
+  content?: AgentContentBlock[]
   model?: string
   sandbox?: SessionSandboxConfig | undefined
 }

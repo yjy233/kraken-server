@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Logo SVG Preview</title>
+    <style>
+      body {
+        margin: 24px;
+        font-family: system-ui, sans-serif;
+        background: #f6f6f6;
+        color: #111;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 24px;
+      }
+      figure {
+        margin: 0;
+        padding: 16px;
+        background: white;
+        border: 1px solid #ddd;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      figcaption {
+        margin-top: 12px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid">
+      <figure>
+        <img src="logo-from-original.svg" alt="Logo SVG from original PNG">
+        <figcaption>logo-from-original.svg</figcaption>
+      </figure>
+      <figure>
+        <img src="logo.svg" alt="Logo SVG from Nano Banana cleaned PNG">
+        <figcaption>logo.svg</figcaption>
+      </figure>
+    </div>
+  </body>
+</html>
