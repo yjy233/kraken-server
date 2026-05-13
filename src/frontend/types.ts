@@ -15,6 +15,7 @@ export interface Config {
   schedulerEnabled: boolean
   schedulerMaxConcurrency: number
   schedulerPollIntervalMs: number
+  memoryEnabled: boolean
   skills: SkillInfo[]
   tools: ToolInfo[]
 }
@@ -101,6 +102,7 @@ export interface Session {
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
   contextWindow?: ContextWindowState | undefined
+  memory?: SessionMemoryState | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessage[]
@@ -113,6 +115,7 @@ export interface SessionSummary {
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
   contextWindow?: ContextWindowState | undefined
+  memory?: SessionMemoryState | undefined
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -134,6 +137,25 @@ export interface ContextWindowState {
   originalMessageCount: number
   effectiveMessageCount: number
   summaryTokens: number
+}
+
+export interface SessionMemoryFailure {
+  toolName: string
+  inputPreview: string
+  error: string
+  resolved?: boolean
+  at: string
+}
+
+export interface SessionMemoryState {
+  summary: string
+  goals: string[]
+  decisions: string[]
+  openItems: string[]
+  userPreferences: string[]
+  relevantFiles: string[]
+  recentFailures: SessionMemoryFailure[]
+  updatedAt: string
 }
 
 export interface SessionMessage {

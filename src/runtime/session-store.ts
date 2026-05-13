@@ -3,6 +3,8 @@ import { promises as fs } from 'node:fs'
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type { SessionSandboxConfig } from '../tools/types.js'
+import { normalizeSessionMemory } from '../memory/short-term.js'
+import type { SessionMemoryState } from '../memory/types.js'
 import {
   collapseWhitespace,
   isSafeSessionId,
@@ -52,6 +54,7 @@ export interface SessionRecord {
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
   contextWindow?: ContextWindowState | undefined
+  memory?: SessionMemoryState | undefined
   createdAt: string
   updatedAt: string
   messages: SessionMessageRecord[]
@@ -64,6 +67,7 @@ export interface SessionSummaryRecord {
   sandbox?: SessionSandboxConfig | undefined
   loadedSkills?: string[] | undefined
   contextWindow?: ContextWindowState | undefined
+  memory?: SessionMemoryState | undefined
   createdAt: string
   updatedAt: string
   messageCount: number
@@ -110,6 +114,7 @@ export function createSessionStore(params: {
       sandbox: session.sandbox,
       loadedSkills: session.loadedSkills || [],
       contextWindow: session.contextWindow,
+      memory: session.memory,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
       messageCount: session.messages.length,
@@ -187,6 +192,9 @@ export function createSessionStore(params: {
     session.messages = Array.isArray(session.messages)
       ? session.messages.map(normalizeMessageRecord).filter((message): message is SessionMessageRecord => Boolean(message))
       : []
+    if (session.memory !== undefined) {
+      session.memory = normalizeSessionMemory(session.memory)
+    }
     return session
   }
 

@@ -19,10 +19,13 @@ import { searchTool } from './search.js'
 import { replaceTool } from './replace.js'
 import { skillTool } from './skill.js'
 import { skillInstallTool } from './skill-install.js'
+import { memorySearchTool, memoryRememberTool, proposalCreateTool } from './memory.js'
 import { buildSessionSandboxPolicy } from './sandbox.js'
 import type { SessionSandboxConfig } from './types.js'
 import type { Skill, SkillRuntimeState } from '../skills/types.js'
 import { refreshSkills } from '../skills/manager.js'
+import type { MemoryStore } from '../memory/store.js'
+import type { ProposalStore } from '../evolution/proposal-store.js'
 
 export interface CreateRegistryOptions {
   rootDir: string
@@ -37,6 +40,8 @@ export interface CreateRegistryOptions {
   enableSeatbelt: boolean
   defaultWorkspaceRoot: string
   sensitivePaths: string[]
+  memoryStore?: MemoryStore | undefined
+  proposalStore?: ProposalStore | undefined
   enabledTools?: string[] | undefined // 若为空则启用全部（write_file/shell_command 仍受独立开关控制）
 }
 
@@ -65,6 +70,9 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     replaceTool,
     skillTool,
     skillInstallTool,
+    memorySearchTool,
+    memoryRememberTool,
+    proposalCreateTool,
   ]
 
   const tools = allTools.filter((tool) => {
@@ -103,6 +111,8 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
       availableSkills = skills
       ctx.availableSkills = skills
     },
+    memoryStore: options.memoryStore,
+    proposalStore: options.proposalStore,
   }
 
   // 注入上下文：包装 execute 方法，并映射为 ToolDefinition 格式

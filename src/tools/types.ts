@@ -3,6 +3,8 @@
  */
 
 import type { Skill, SkillRuntimeState } from '../skills/types.js'
+import type { MemoryStore } from '../memory/store.js'
+import type { ProposalStore } from '../evolution/proposal-store.js'
 
 export interface SessionSandboxConfig {
   workspaceRoot?: string
@@ -42,6 +44,8 @@ export interface ToolContext {
   skillState: SkillRuntimeState
   refreshSkills: () => Skill[]
   setAvailableSkills: (skills: Skill[]) => void
+  memoryStore?: MemoryStore | undefined
+  proposalStore?: ProposalStore | undefined
 }
 
 export interface ToolResult {

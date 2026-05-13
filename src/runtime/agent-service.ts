@@ -18,6 +18,13 @@ import {
 } from '../utils/helpers.js'
 import type { SessionMessageMeta, SessionMessageRecord, SessionRecord } from './session-store.js'
 import { prepareContextWindow, type ContextCompressionConfig } from './context-window.js'
+import type { MemoryStore } from '../memory/store.js'
+import type { ProposalStore } from '../evolution/proposal-store.js'
+import { resolveMemoryScope } from '../memory/scope.js'
+import { buildMemoryPromptBlock } from '../memory/prompt.js'
+import { updateSessionMemory } from '../memory/short-term.js'
+import { extractMemoryCandidates } from '../memory/extractor.js'
+import { createPostRunProposals } from '../evolution/reflection.js'
 
 export interface AgentServiceConfig {
   defaultModel: string
@@ -30,6 +37,9 @@ export interface AgentServiceConfig {
   defaultWorkspaceRoot: string
   sensitivePaths: string[]
   enablePathSandbox: boolean
+  memoryEnabled: boolean
+  memoryStore: MemoryStore
+  proposalStore: ProposalStore
   toolRegistryOptions: CreateRegistryOptions
   sessionStore: {
     createSession: (input: {
@@ -89,14 +99,23 @@ export function createAgentService(config: AgentServiceConfig) {
     ).build()
   }
 
-  function buildRuntimeSystemPrompt(basePrompt: string, tools: ToolDefinition[], sandboxPolicy: SessionSandboxPolicy): string {
-    return [
-      buildSystemPrompt(basePrompt, tools),
+  function buildRuntimeSystemPrompt(input: {
+    basePrompt: string
+    tools: ToolDefinition[]
+    sandboxPolicy: SessionSandboxPolicy
+    memoryPromptBlock?: string
+  }): string {
+    const parts = [
+      buildSystemPrompt(input.basePrompt, input.tools),
       '',
       buildRuntimeDateContext(),
       '',
-      buildSandboxPromptContext(sandboxPolicy),
-    ].join('\n')
+      buildSandboxPromptContext(input.sandboxPolicy),
+    ]
+    if (input.memoryPromptBlock) {
+      parts.push('', input.memoryPromptBlock)
+    }
+    return parts.join('\n')
   }
 
   function buildContextCompressionConfig(): ContextCompressionConfig {
@@ -221,6 +240,27 @@ export function createAgentService(config: AgentServiceConfig) {
       skillState,
     })
 
+    const memoryScope = resolveMemoryScope({
+      session,
+      sandbox: requestSandbox,
+      defaultWorkspaceRoot: config.defaultWorkspaceRoot,
+      messageMeta: input.messageMeta,
+    })
+    const memoryQuery = contentPreview(userContent)
+    const relevantMemories = config.memoryEnabled
+      ? await config.memoryStore.search({
+        scope: memoryScope,
+        query: memoryQuery,
+        limit: 6,
+      })
+      : []
+    const memoryPromptBlock = config.memoryEnabled
+      ? buildMemoryPromptBlock({
+        sessionMemory: session.memory,
+        memories: relevantMemories,
+      })
+      : ''
+
     const userMessage: SessionMessageRecord = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -240,7 +280,12 @@ export function createAgentService(config: AgentServiceConfig) {
     })
 
     const effectiveSystemPrompt = appendSystemPromptSuffix(session.systemPrompt, input.systemPromptSuffix)
-    const runtimeSystemPrompt = buildRuntimeSystemPrompt(effectiveSystemPrompt, toolRegistry, sandboxPolicy)
+    const runtimeSystemPrompt = buildRuntimeSystemPrompt({
+      basePrompt: effectiveSystemPrompt,
+      tools: toolRegistry,
+      sandboxPolicy,
+      memoryPromptBlock,
+    })
     const contextMessages = session.messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -271,17 +316,44 @@ export function createAgentService(config: AgentServiceConfig) {
     session.loadedSkills = result.loadedSkills || []
 
     const newMessages = result.finalMessages.slice(agentMessages.length)
-    session.messages.push(...newMessages.map((message): SessionMessageRecord => ({
+    const persistedNewMessages = newMessages.map((message): SessionMessageRecord => ({
       id: crypto.randomUUID(),
       role: message.role,
       content: message.content,
       createdAt: new Date().toISOString(),
-    })))
+    }))
+    session.messages.push(...persistedNewMessages)
     session.updatedAt = new Date().toISOString()
 
     const run = result.run
     run.sessionId = session.id
     run.contextWindow = contextPreparation.state
+
+    if (config.memoryEnabled) {
+      const completedRun = {
+        sessionId: session.id,
+        runId: run.id,
+        userMessage,
+        assistantMessages: persistedNewMessages.filter((message) => message.role === 'assistant'),
+        toolExecutions: run.toolExecutions,
+        sandbox: session.sandbox,
+        source: input.messageMeta?.source,
+        scope: memoryScope,
+      }
+      session.memory = updateSessionMemory({
+        current: session.memory,
+        completedRun,
+      })
+      const candidates = extractMemoryCandidates(completedRun)
+      for (const candidate of candidates.filter((item) => item.confidence >= 0.72)) {
+        await config.memoryStore.addCandidate(candidate)
+      }
+      await createPostRunProposals({
+        completedRun,
+        candidates,
+        proposalStore: config.proposalStore,
+      })
+    }
 
     await config.sessionStore.saveSession(session)
     emit?.('session', {

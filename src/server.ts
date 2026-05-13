@@ -35,6 +35,8 @@ import { createWorkspaceBrowserService } from './workspace/browser.js'
 import { readFeishuConfig, validateFeishuConfig } from './integrations/feishu/config.js'
 import { createFeishuService } from './integrations/feishu/service.js'
 import { summarizeModelUsageLog } from './logging/model-usage.js'
+import { createMemoryStore } from './memory/store.js'
+import { createProposalStore } from './evolution/proposal-store.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -42,6 +44,7 @@ const ROOT_DIR = path.resolve(__dirname, '..')
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public')
 const SESSION_DIR = path.join(ROOT_DIR, '.sessions')
 const SCHEDULED_JOBS_DIR = path.join(ROOT_DIR, '.scheduled-jobs')
+const MEMORY_DIR = path.resolve(expandHomePath(process.env.MEMORY_DIR || path.join(ROOT_DIR, '.memory')))
 const MAX_MARKDOWN_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_WORKSPACE_UPLOAD_BYTES = 25 * 1024 * 1024
 const MAX_CHAT_JSON_BYTES = '20mb'
@@ -117,6 +120,7 @@ const CONFIGURED = Boolean(process.env.OPENROUTER_API_KEY)
 const SCHEDULER_ENABLED = parseBoolean(process.env.SCHEDULER_ENABLED, true)
 const SCHEDULER_POLL_INTERVAL_MS = parseInteger(process.env.SCHEDULER_POLL_INTERVAL_MS, 300000)
 const SCHEDULER_MAX_CONCURRENCY = parseInteger(process.env.SCHEDULER_MAX_CONCURRENCY, 1)
+const MEMORY_ENABLED = parseBoolean(process.env.MEMORY_ENABLED, true)
 const FEISHU_CONFIG = readFeishuConfig(process.env)
 
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
@@ -147,6 +151,10 @@ const sessionStore = createSessionStore({
 })
 
 const wsHub = createWsHub()
+const memoryStore = createMemoryStore(MEMORY_DIR)
+const proposalStore = createProposalStore(MEMORY_DIR)
+TOOL_REGISTRY_OPTIONS.memoryStore = memoryStore
+TOOL_REGISTRY_OPTIONS.proposalStore = proposalStore
 
 const agentService = createAgentService({
   defaultModel: DEFAULT_MODEL,
@@ -159,6 +167,9 @@ const agentService = createAgentService({
   defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
   sensitivePaths: SENSITIVE_PATHS,
   enablePathSandbox: ENABLE_PATH_SANDBOX,
+  memoryEnabled: MEMORY_ENABLED,
+  memoryStore,
+  proposalStore,
   toolRegistryOptions: TOOL_REGISTRY_OPTIONS,
   sessionStore,
 })
@@ -244,6 +255,7 @@ app.get('/api/config', (_req, res) => {
     schedulerEnabled: SCHEDULER_ENABLED,
     schedulerMaxConcurrency: SCHEDULER_MAX_CONCURRENCY,
     schedulerPollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
+    memoryEnabled: MEMORY_ENABLED,
     skills: getAvailableSkills().map((skill) => ({
       name: skill.name,
       description: skill.description,
@@ -271,6 +283,29 @@ app.get('/api/model-usage', async (_req, res, next) => {
   try {
     const usage = await summarizeModelUsageLog()
     res.json({ ok: true, ...usage })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/memory', async (req, res, next) => {
+  try {
+    const scopeType = typeof req.query.scopeType === 'string' ? req.query.scopeType.trim() : ''
+    const scopeKey = typeof req.query.scopeKey === 'string' ? req.query.scopeKey.trim() : ''
+    const records = scopeType && scopeKey
+      ? await memoryStore.list({ type: scopeType as any, key: scopeKey, label: `${scopeType}:${scopeKey}` })
+      : await memoryStore.list()
+    res.json({ ok: true, records })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/evolution/proposals', async (req, res, next) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : undefined
+    const proposals = await proposalStore.list(status as any)
+    res.json({ ok: true, proposals })
   } catch (error) {
     next(error)
   }
