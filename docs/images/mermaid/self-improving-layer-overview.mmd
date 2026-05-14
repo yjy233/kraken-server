@@ -1,0 +1,16 @@
+flowchart TB
+  L0["L0 Channels<br/>Web / Feishu / Scheduler"]
+  L1["L1 Runtime Orchestration<br/>agentService.run / session / sandbox / tools"]
+  L2["L2 Context Adaptation<br/>context-window / SessionMemoryState"]
+  L3["L3 Persistent Memory<br/>scope / store / search / provider"]
+  L4["L4 Reflection & Extraction<br/>post-run extractor / failure mining"]
+  L5["L5 Skill Evolution<br/>skill telemetry / skill proposals / curator"]
+  L6["L6 Governance<br/>proposal review / apply / audit"]
+
+  L0 --> L1
+  L1 --> L2
+  L2 --> L3
+  L3 --> L4
+  L4 --> L5
+  L5 --> L6
+  L6 -.approved changes.-> L1

@@ -1,0 +1,14 @@
+sequenceDiagram
+  participant U as User
+  participant AS as agentService.run()
+  participant SM as SessionMemory
+  participant CW as ContextWindow
+  participant A as ReActAgent
+
+  U->>AS: send message
+  AS->>SM: read rolling summary / goals / decisions
+  AS->>CW: prepare context with recent turns
+  AS->>A: run with session memory block
+  A-->>AS: final reply + tool executions
+  AS->>SM: update summary, open items, failures
+  AS-->>U: reply

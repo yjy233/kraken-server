@@ -1,0 +1,18 @@
+gantt
+  title Kraken 自进化落地路径
+  dateFormat  YYYY-MM-DD
+  section Phase 1
+  SessionMemoryState           :p1a, 2026-05-13, 4d
+  Runtime memory prompt block  :p1b, after p1a, 3d
+  section Phase 2
+  MemoryStore JSONL            :p2a, after p1b, 5d
+  Scope resolver + search      :p2b, after p2a, 5d
+  section Phase 3
+  Post-run extractor           :p3a, after p2b, 5d
+  memory_search/remind tools   :p3b, after p3a, 4d
+  section Phase 4
+  Skill telemetry              :p4a, after p3b, 4d
+  Proposal store + UI          :p4b, after p4a, 6d
+  section Phase 5
+  Curator scheduler jobs       :p5a, after p4b, 6d
+  Apply workflow + audit       :p5b, after p5a, 5d

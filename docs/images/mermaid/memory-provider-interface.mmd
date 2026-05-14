@@ -1,0 +1,26 @@
+classDiagram
+  class MemoryProvider {
+    initialize()
+    search(query)
+    write(record)
+    update(id, patch)
+    forget(id)
+  }
+  class LocalJsonlMemoryProvider {
+    memories.jsonl
+    keyword search
+    append only writes
+  }
+  class SqliteMemoryProvider {
+    FTS5
+    transactions
+    indexes
+  }
+  class EmbeddingMemoryProvider {
+    vector search
+    rerank
+  }
+
+  MemoryProvider <|.. LocalJsonlMemoryProvider
+  MemoryProvider <|.. SqliteMemoryProvider
+  MemoryProvider <|.. EmbeddingMemoryProvider

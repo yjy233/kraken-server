@@ -1,0 +1,11 @@
+flowchart LR
+  Observation["Observation<br/>failure/repetition/user feedback"] --> Proposal["Proposal"]
+  Proposal --> Risk["Risk classification"]
+  Risk --> Pending["pending"]
+  Pending --> UI["Review UI/API"]
+  UI --> Accepted["accepted"]
+  UI --> Rejected["rejected"]
+  Accepted --> Apply["apply with explicit action"]
+  Apply --> Audit["audit.jsonl"]
+  Apply --> Verify["run validation"]
+  Verify --> Applied["applied"]

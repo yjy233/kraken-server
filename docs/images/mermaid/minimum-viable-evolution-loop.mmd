@@ -1,0 +1,8 @@
+flowchart LR
+  Use["Use agent"] --> Observe["Observe result"]
+  Observe --> Extract["Extract memories/failures"]
+  Extract --> Store["Store scoped memory"]
+  Store --> Retrieve["Retrieve next run"]
+  Retrieve --> Better["Better behavior"]
+  Better --> Proposal["Generate improvement proposal"]
+  Proposal --> Review["Human review"]

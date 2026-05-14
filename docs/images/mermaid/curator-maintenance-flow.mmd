@@ -1,0 +1,17 @@
+flowchart TB
+  Trigger["Scheduler trigger<br/>daily/weekly/manual"] --> Snapshot["Load memories, proposals,<br/>skill usage, failures"]
+  Snapshot --> Deterministic["Phase 1 deterministic maintenance"]
+  Deterministic --> Dedupe["dedupe memories"]
+  Deterministic --> Decay["decay stale records"]
+  Deterministic --> Archive["mark stale skills"]
+  Snapshot --> LLM["Phase 2 LLM review<br/>auxiliary model"]
+  LLM --> Clusters["find clusters"]
+  LLM --> Umbrella["suggest umbrella skills"]
+  LLM --> PromptPatch["suggest prompt/tool policy patches"]
+  Dedupe --> Report["Curator Report"]
+  Decay --> Report
+  Archive --> Report
+  Clusters --> Proposal["Evolution Proposals"]
+  Umbrella --> Proposal
+  PromptPatch --> Proposal
+  Proposal --> Report

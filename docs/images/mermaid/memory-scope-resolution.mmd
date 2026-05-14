@@ -1,0 +1,17 @@
+flowchart TB
+  Input["Run context"]
+  FeishuMeta{"has Feishu meta?"}
+  SchedulerMeta{"source=scheduler?"}
+  Workspace{"has workspaceRoot?"}
+  FeishuScope["feishu-chat:<chatType>:<chatId>"]
+  SchedulerScope["scheduler-job:<session/job>"]
+  WorkspaceScope["workspace:<absolute-root>"]
+  GlobalScope["global"]
+
+  Input --> FeishuMeta
+  FeishuMeta -- yes --> FeishuScope
+  FeishuMeta -- no --> SchedulerMeta
+  SchedulerMeta -- yes --> SchedulerScope
+  SchedulerMeta -- no --> Workspace
+  Workspace -- yes --> WorkspaceScope
+  Workspace -- no --> GlobalScope

@@ -1,0 +1,9 @@
+flowchart LR
+  Run["Completed Run"] --> Extract["Memory Candidate Extractor"]
+  Extract --> Filter["Safety + Scope Filter"]
+  Filter --> High["High confidence<br/>write memory"]
+  Filter --> Low["Low confidence<br/>proposal/pending"]
+  High --> Store[".memory/memories.jsonl"]
+  Store --> Index["keyword-index.json"]
+  Index --> Retrieve["retrieve before next run"]
+  Retrieve --> Prompt["Relevant Memory Block"]

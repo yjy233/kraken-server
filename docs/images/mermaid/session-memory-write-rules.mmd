@@ -1,0 +1,17 @@
+flowchart TB
+  Input["new turn"]
+  UserSignals["user goals/preferences"]
+  AssistantSignals["decisions/open items"]
+  ToolSignals["failures/files"]
+  Merge["merge into SessionMemoryState"]
+  Trim["trim by field limits"]
+  Store["persist in session"]
+
+  Input --> UserSignals
+  Input --> AssistantSignals
+  Input --> ToolSignals
+  UserSignals --> Merge
+  AssistantSignals --> Merge
+  ToolSignals --> Merge
+  Merge --> Trim
+  Trim --> Store

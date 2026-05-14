@@ -1,0 +1,16 @@
+flowchart LR
+  Workflow["Repeated successful workflow"]
+  Failure["Skill-related failure"]
+  Telemetry["Skill usage telemetry"]
+  Proposal["skill_create / skill_patch proposal"]
+  Review["Human review"]
+  Install["skill_install / link"]
+  Active["Active skill"]
+
+  Workflow --> Proposal
+  Failure --> Proposal
+  Telemetry --> Proposal
+  Proposal --> Review
+  Review --> Install
+  Install --> Active
+  Active --> Telemetry

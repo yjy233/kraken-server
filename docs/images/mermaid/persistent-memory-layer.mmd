@@ -1,0 +1,11 @@
+flowchart LR
+  Scope["Scope Resolver"]
+  Query["User message + session signals"]
+  Store["MemoryStore<br/>.memory/memories.jsonl"]
+  Search["Keyword Search<br/>score = terms + tags + confidence + importance"]
+  Prompt["Relevant Long-term Memory"]
+
+  Scope --> Search
+  Query --> Search
+  Store --> Search
+  Search --> Prompt

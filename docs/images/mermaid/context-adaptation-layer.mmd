@@ -1,0 +1,12 @@
+flowchart TB
+  Messages["Session Messages"]
+  ContextWindow["context-window.ts<br/>token estimate + compression"]
+  SessionMemory["SessionMemoryState"]
+  PromptBlock["## Session Memory prompt block"]
+  NextRun["Next agent run"]
+
+  Messages --> ContextWindow
+  Messages --> SessionMemory
+  ContextWindow --> SessionMemory
+  SessionMemory --> PromptBlock
+  PromptBlock --> NextRun

@@ -1,0 +1,7 @@
+flowchart LR
+  Main["Main Agent Runtime"] --> Sidecar["Evolution Sidecar"]
+  Sidecar --> Memory["Memory"]
+  Sidecar --> Proposal["Proposal"]
+  Sidecar --> Curator["Curator"]
+  Proposal --> Human["Human Approval"]
+  Human --> Runtime["Runtime Config / Skill / Docs"]

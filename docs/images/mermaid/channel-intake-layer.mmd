@@ -1,0 +1,12 @@
+flowchart LR
+  Web["Web Chat<br/>sessionId, sandbox, message"]
+  Feishu["Feishu Bot<br/>chatId, senderId, messageId, chatType"]
+  Scheduler["Scheduler<br/>jobId, template, params"]
+  Normalizer["Request Normalizer<br/>RunAgentServiceRequest"]
+  Meta["Message Meta<br/>source + provider metadata"]
+
+  Web --> Normalizer
+  Feishu --> Normalizer
+  Scheduler --> Normalizer
+  Normalizer --> Meta
+  Meta --> Run["agentService.run()"]

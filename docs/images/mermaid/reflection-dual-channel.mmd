@@ -1,0 +1,12 @@
+flowchart LR
+  Transcript["transcript + tool log"]
+  Deterministic["deterministic extractor"]
+  LlmReview["optional LLM reviewer"]
+  SafeWrite["safe memory write"]
+  Proposal["proposal queue"]
+
+  Transcript --> Deterministic
+  Transcript -.phase 2.-> LlmReview
+  Deterministic --> SafeWrite
+  Deterministic --> Proposal
+  LlmReview --> Proposal

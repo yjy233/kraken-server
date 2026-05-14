@@ -1,0 +1,14 @@
+sequenceDiagram
+  participant Agent as Agent/Curator
+  participant Store as proposalStore
+  participant User as Reviewer
+  participant Apply as apply service
+  participant Verify as validator
+  participant Audit as audit log
+
+  Agent->>Store: create pending proposal
+  User->>Store: accept/reject
+  User->>Apply: apply accepted proposal
+  Apply->>Verify: run validation
+  Verify-->>Apply: result
+  Apply->>Audit: append immutable audit event

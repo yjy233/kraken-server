@@ -1,0 +1,19 @@
+flowchart TB
+  Run["Completed Run"]
+  Messages["User + Assistant messages"]
+  Tools["Tool executions"]
+  Extractor["Memory Candidate Extractor"]
+  Safety["Safety filter<br/>secret detection + scope policy"]
+  Memory["High-confidence memory"]
+  Proposal["Low-confidence or high-impact proposal"]
+  SessionState["SessionMemoryState update"]
+
+  Run --> Messages
+  Run --> Tools
+  Messages --> Extractor
+  Tools --> Extractor
+  Extractor --> Safety
+  Safety --> Memory
+  Safety --> Proposal
+  Tools --> SessionState
+  Messages --> SessionState

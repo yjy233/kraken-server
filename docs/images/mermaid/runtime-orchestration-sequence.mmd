@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant Entry as Channel Entry
+  participant Service as agentService.run
+  participant Session as sessionStore
+  participant Sandbox as sandboxPolicy
+  participant Tools as toolRegistry
+  participant Memory as memoryStore
+  participant Agent as ReActAgent
+  participant Proposal as proposalStore
+
+  Entry->>Service: RunAgentServiceRequest
+  Service->>Session: load or create session
+  Service->>Sandbox: build policy
+  Service->>Tools: create registry
+  Service->>Memory: search scoped memory
+  Service->>Agent: run with runtime prompt
+  Agent-->>Service: finalMessages + run
+  Service->>Session: persist messages + SessionMemoryState
+  Service->>Memory: write high-confidence memories
+  Service->>Proposal: write improvement proposals

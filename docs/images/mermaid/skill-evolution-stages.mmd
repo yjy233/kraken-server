@@ -1,0 +1,13 @@
+flowchart TB
+  Observe["Observe skill activation"]
+  Attribute["Attribute success/failure"]
+  Cluster["Cluster repeated workflows"]
+  Draft["Draft skill_create/skill_patch proposal"]
+  Validate["Validate proposed skill shape"]
+  Review["Human review"]
+
+  Observe --> Attribute
+  Attribute --> Cluster
+  Cluster --> Draft
+  Draft --> Validate
+  Validate --> Review

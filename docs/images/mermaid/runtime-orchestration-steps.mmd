@@ -1,0 +1,13 @@
+flowchart LR
+  Load["1 load session"]
+  Policy["2 build sandbox/tool policy"]
+  Retrieve["3 retrieve memory"]
+  Prompt["4 build runtime prompt"]
+  Run["5 run ReActAgent"]
+  Persist["6 persist + extract"]
+
+  Load --> Policy
+  Policy --> Retrieve
+  Retrieve --> Prompt
+  Prompt --> Run
+  Run --> Persist

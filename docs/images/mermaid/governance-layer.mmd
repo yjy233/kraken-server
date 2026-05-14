@@ -1,0 +1,21 @@
+flowchart TB
+  Proposal["EvolutionProposal"]
+  Risk["Risk classifier"]
+  Pending["pending queue"]
+  Human["Human Review"]
+  Accepted["accepted"]
+  Rejected["rejected"]
+  Apply["Apply workflow"]
+  Validate["Validation<br/>build/test/smoke"]
+  Audit["audit.jsonl"]
+  Applied["applied"]
+
+  Proposal --> Risk
+  Risk --> Pending
+  Pending --> Human
+  Human --> Accepted
+  Human --> Rejected
+  Accepted --> Apply
+  Apply --> Validate
+  Validate --> Audit
+  Audit --> Applied

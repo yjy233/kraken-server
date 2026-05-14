@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> Candidate
+  Candidate --> Proposed: repeated success / user asks to save workflow
+  Proposed --> Accepted: human review
+  Accepted --> Active: skill_install/link
+  Active --> PatchProposed: failure or better workflow found
+  PatchProposed --> Active: accepted patch
+  Active --> Stale: idle threshold
+  Stale --> Active: reused
+  Stale --> Archived: curator archives
+  Archived --> Active: restored

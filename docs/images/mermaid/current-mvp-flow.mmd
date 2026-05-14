@@ -1,0 +1,10 @@
+flowchart TB
+  User["User Run"] --> Runtime["agentService.run"]
+  Runtime --> Retrieve["memoryStore.search"]
+  Retrieve --> Prompt["memory-context prompt"]
+  Prompt --> Agent["ReActAgent"]
+  Agent --> Persist["save session messages"]
+  Persist --> SessionMemory["update SessionMemoryState"]
+  Persist --> Extract["extractMemoryCandidates"]
+  Extract --> Store["write .memory/memories.jsonl"]
+  Extract --> Proposal["write .memory/proposals.jsonl"]

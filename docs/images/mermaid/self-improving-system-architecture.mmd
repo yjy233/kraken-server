@@ -1,0 +1,59 @@
+flowchart TB
+  subgraph Intake["Runtime Intake"]
+    Web["Web Chat"]
+    Feishu["Feishu Bot"]
+    Scheduler["Scheduler Job"]
+  end
+
+  subgraph Runtime["Agent Runtime"]
+    AgentService["agentService.run()"]
+    Scope["Memory Scope Resolver"]
+    Prompt["Runtime Prompt Builder"]
+    React["ReActAgent + Tools"]
+    Context["Context Window"]
+  end
+
+  subgraph Memory["Memory Layer"]
+    STM["SessionMemoryState<br/>short-term"]
+    LTM["MemoryStore<br/>long-term"]
+    Search["MemorySearch<br/>keyword now, vector later"]
+    Provider["MemoryProvider Interface"]
+  end
+
+  subgraph Evolution["Evolution Layer"]
+    Extractor["Post-run Extractor"]
+    Reflection["Reflection Engine"]
+    Proposal["Proposal Store"]
+    SkillTelemetry["Skill Usage Telemetry"]
+    Curator["Curator / Maintainer"]
+  end
+
+  subgraph Governance["Governance"]
+    Review["Human Review UI/API"]
+    Apply["Apply Accepted Proposal"]
+    Audit["Audit Log"]
+  end
+
+  Web --> AgentService
+  Feishu --> AgentService
+  Scheduler --> AgentService
+  AgentService --> Scope
+  Scope --> Search
+  STM --> Prompt
+  Search --> Prompt
+  LTM --> Search
+  Provider --> LTM
+  Prompt --> Context
+  Context --> React
+  React --> Extractor
+  React --> SkillTelemetry
+  Extractor --> STM
+  Extractor --> LTM
+  Extractor --> Reflection
+  Reflection --> Proposal
+  SkillTelemetry --> Curator
+  LTM --> Curator
+  Curator --> Proposal
+  Proposal --> Review
+  Review --> Apply
+  Apply --> Audit

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import path from 'node:path'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotEnv } from 'dotenv'
 
@@ -199,15 +201,23 @@ export function generateFilenameFromPrompt(prompt) {
 
 async function postOpenRouter({ payload, apiKey, proxyUrl }) {
   const dispatcher = proxyUrl ? await createProxyDispatcher(proxyUrl) : undefined
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-    dispatcher,
-  })
+  let response
+  try {
+    response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      dispatcher,
+    })
+  } catch (error) {
+    if (!proxyUrl) {
+      throw error
+    }
+    return postOpenRouterWithCurl({ payload, apiKey, proxyUrl })
+  }
 
   const text = await response.text()
   const data = safeJsonParse(text)
@@ -215,6 +225,71 @@ async function postOpenRouter({ payload, apiKey, proxyUrl }) {
     fail(`OpenRouter API error: HTTP ${response.status}`, data || text)
   }
   return data
+}
+
+async function postOpenRouterWithCurl({ payload, apiKey, proxyUrl }) {
+  const payloadPath = path.join(tmpdir(), `nano-banana-openrouter-${process.pid}-${Date.now()}.json`)
+  await writeFile(payloadPath, JSON.stringify(payload))
+
+  const args = [
+    '--silent',
+    '--show-error',
+    '--fail-with-body',
+    '--max-time',
+    '300',
+    '--config',
+    '-',
+    '--data-binary',
+    `@${payloadPath}`,
+  ]
+  const config = [
+    `url = "${OPENROUTER_URL}"`,
+    'request = "POST"',
+    `proxy = "${proxyUrl}"`,
+    `header = "Authorization: Bearer ${apiKey}"`,
+    'header = "Content-Type: application/json"',
+    '',
+  ].join('\n')
+
+  try {
+    const { stdout, stderr } = await runCurl(args, config)
+    const data = safeJsonParse(stdout)
+    if (!data) {
+      fail('OpenRouter curl fallback returned non-JSON response.', stderr || stdout)
+    }
+    return data
+  } finally {
+    await unlink(payloadPath).catch(() => {})
+  }
+}
+
+function runCurl(args, stdin) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('curl', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr })
+        return
+      }
+      reject(new Error(stderr || `curl exited with status ${code}`))
+    })
+
+    child.stdin.end(stdin)
+  })
 }
 
 function buildContent(prompt, inputImage) {
