@@ -115,12 +115,42 @@ export interface EvolutionProposal {
   sourceSessionIds: string[]
   suggestedChange: string
   patch?: string
+  payload?: Record<string, unknown>
   risk: 'low' | 'medium' | 'high'
   status: EvolutionProposalStatus
   reviewNote?: string
   reviewedAt?: string
+  appliedAt?: string
+  applyResult?: ProposalApplyResult
   createdAt: string
   updatedAt: string
+}
+
+export interface ProposalApplyValidation {
+  name: string
+  ok: boolean
+  output: string
+}
+
+export interface ProposalApplyResult {
+  ok: boolean
+  adapter: 'workspace_memory' | 'workspace_skill'
+  changedFiles: string[]
+  validation: ProposalApplyValidation[]
+  preview: string
+  auditPath?: string
+  error?: string
+  appliedBy?: string
+  appliedAt: string
+}
+
+export interface ProposalApplyResponse {
+  proposal: EvolutionProposal
+  dryRun: boolean
+  changedFiles: string[]
+  preview: string
+  validation: ProposalApplyValidation[]
+  auditPath?: string
 }
 
 export interface Session {

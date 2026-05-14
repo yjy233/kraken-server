@@ -15,7 +15,7 @@ import {
   resolveSandboxPath,
 } from './tools/sandbox.js'
 import type { SessionSandboxConfig } from './tools/types.js'
-import { getAvailableSkills } from './skills/manager.js'
+import { getAvailableSkills, refreshSkills } from './skills/manager.js'
 import {
   parseInteger,
   parseBoolean,
@@ -37,6 +37,7 @@ import { createFeishuService } from './integrations/feishu/service.js'
 import { summarizeModelUsageLog } from './logging/model-usage.js'
 import { createMemoryStore } from './memory/store.js'
 import { createProposalStore } from './evolution/proposal-store.js'
+import { applyEvolutionProposal } from './evolution/apply.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -332,6 +333,40 @@ app.post('/api/evolution/proposals/:proposalId/reject', async (req, res, next) =
       reviewNote: typeof req.body?.reviewNote === 'string' ? req.body.reviewNote : undefined,
     })
     res.json({ ok: true, proposal })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/evolution/proposals/:proposalId/dry-run', async (req, res, next) => {
+  try {
+    const workspaceRoot = await resolveProposalWorkspaceRoot(req.body)
+    const result = await applyEvolutionProposal({
+      proposalStore,
+      proposalId: req.params.proposalId,
+      workspaceRoot,
+      dryRun: true,
+      appliedBy: 'web',
+      refreshSkills,
+    })
+    res.json({ ok: true, ...result })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/evolution/proposals/:proposalId/apply', async (req, res, next) => {
+  try {
+    const workspaceRoot = await resolveProposalWorkspaceRoot(req.body)
+    const result = await applyEvolutionProposal({
+      proposalStore,
+      proposalId: req.params.proposalId,
+      workspaceRoot,
+      dryRun: false,
+      appliedBy: 'web',
+      refreshSkills,
+    })
+    res.json({ ok: true, ...result })
   } catch (error) {
     next(error)
   }
@@ -850,6 +885,31 @@ function normalizeSystemPrompt(systemPrompt: string | undefined): string {
   return agentService.normalizeSystemPrompt(systemPrompt)
 }
 
+async function resolveProposalWorkspaceRoot(body: unknown): Promise<string> {
+  const record = body && typeof body === 'object'
+    ? body as Record<string, unknown>
+    : {}
+  const explicitRoot = typeof record.workspaceRoot === 'string' ? record.workspaceRoot.trim() : ''
+  if (explicitRoot) {
+    return path.resolve(expandHomePath(explicitRoot))
+  }
+
+  const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : ''
+  if (sessionId) {
+    const session = await sessionStore.loadSession(sessionId)
+    if (!session) {
+      throw new Error('Session not found')
+    }
+    const sessionWorkspace = session.sandbox?.workspaceRoot?.trim()
+    if (!sessionWorkspace) {
+      throw new Error('workspaceRoot is required')
+    }
+    return path.resolve(expandHomePath(sessionWorkspace))
+  }
+
+  throw new Error('workspaceRoot is required')
+}
+
 async function startFeishu() {
   const errors = validateFeishuConfig(FEISHU_CONFIG)
   if (errors.length > 0) {
@@ -916,6 +976,11 @@ function errorStatus(error: unknown, message: string): number {
     message === 'path is required' ||
     message === 'content is required' ||
     message === 'filename is required' ||
+    message === 'workspaceRoot is required' ||
+    message === 'Only accepted proposals can be applied' ||
+    message.includes('requires a structured') ||
+    message.includes('not implemented yet') ||
+    message.includes('is not supported by apply') ||
     message === 'Target path is a directory' ||
     message === 'Requested path is not a file' ||
     message.startsWith('Text content exceeds')

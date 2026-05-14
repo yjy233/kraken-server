@@ -16,6 +16,7 @@ import type {
   ModelUsageSummary,
   EvolutionProposal,
   EvolutionProposalStatus,
+  ProposalApplyResponse,
   AgentContentBlock,
 } from './types.js'
 
@@ -147,6 +148,34 @@ export async function rejectEvolutionProposal(
   return data.proposal
 }
 
+export async function dryRunEvolutionProposal(
+  proposalId: string,
+  workspaceRoot?: string,
+  sessionId?: string | null
+): Promise<ProposalApplyResponse> {
+  return request<ProposalApplyResponse>(
+    `/api/evolution/proposals/${encodeURIComponent(proposalId)}/dry-run`,
+    {
+      method: 'POST',
+      body: JSON.stringify(buildApplyBody(workspaceRoot, sessionId)),
+    }
+  )
+}
+
+export async function applyEvolutionProposal(
+  proposalId: string,
+  workspaceRoot?: string,
+  sessionId?: string | null
+): Promise<ProposalApplyResponse> {
+  return request<ProposalApplyResponse>(
+    `/api/evolution/proposals/${encodeURIComponent(proposalId)}/apply`,
+    {
+      method: 'POST',
+      body: JSON.stringify(buildApplyBody(workspaceRoot, sessionId)),
+    }
+  )
+}
+
 export async function fetchWorkspaceTree(params: {
   sessionId?: string | null
   path?: string
@@ -160,6 +189,17 @@ export async function fetchWorkspaceTree(params: {
   }
   const data = await request<WorkspaceListing>(`/api/workspace/tree?${query.toString()}`)
   return data
+}
+
+function buildApplyBody(workspaceRoot?: string, sessionId?: string | null): Record<string, string> {
+  const body: Record<string, string> = {}
+  if (workspaceRoot && workspaceRoot.trim()) {
+    body.workspaceRoot = workspaceRoot.trim()
+  }
+  if (sessionId) {
+    body.sessionId = sessionId
+  }
+  return body
 }
 
 export async function fetchWorkspaceFile(params: {

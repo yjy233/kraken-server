@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   acceptEvolutionProposal,
+  applyEvolutionProposal,
+  dryRunEvolutionProposal,
   fetchEvolutionProposals,
   rejectEvolutionProposal,
 } from '../api.js'
-import type { EvolutionProposal, EvolutionProposalStatus } from '../types.js'
+import type { EvolutionProposal, EvolutionProposalStatus, ProposalApplyResponse } from '../types.js'
 
 export type ProposalFilter = EvolutionProposalStatus | 'all'
 
@@ -44,6 +46,27 @@ export function useEvolutionProposals(active: boolean) {
     return proposal
   }, [])
 
+  const dryRunApply = useCallback(async (
+    proposalId: string,
+    workspaceRoot?: string,
+    sessionId?: string | null
+  ): Promise<ProposalApplyResponse> => {
+    const result = await dryRunEvolutionProposal(proposalId, workspaceRoot, sessionId)
+    setError(null)
+    return result
+  }, [])
+
+  const apply = useCallback(async (
+    proposalId: string,
+    workspaceRoot?: string,
+    sessionId?: string | null
+  ): Promise<ProposalApplyResponse> => {
+    const result = await applyEvolutionProposal(proposalId, workspaceRoot, sessionId)
+    setAllProposals((prev) => updateProposalList(prev, result.proposal))
+    setError(null)
+    return result
+  }, [])
+
   const counts = useMemo(() => {
     return allProposals.reduce((acc, proposal) => {
       acc[proposal.status] += 1
@@ -81,6 +104,8 @@ export function useEvolutionProposals(active: boolean) {
     refresh,
     accept,
     reject,
+    dryRunApply,
+    apply,
   }
 }
 

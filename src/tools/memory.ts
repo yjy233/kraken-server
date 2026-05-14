@@ -120,6 +120,10 @@ export const proposalCreateTool: Tool = {
         type: 'string',
         enum: ['low', 'medium', 'high'],
       },
+      payload: {
+        type: 'object',
+        description: 'Optional structured apply payload for workspace_memory or workspace_skill adapters.',
+      },
     },
     required: ['type', 'title', 'rationale', 'suggestedChange'],
   },
@@ -132,6 +136,9 @@ export const proposalCreateTool: Tool = {
       title: String(input.title || '').trim(),
       rationale: String(input.rationale || '').trim(),
       suggestedChange: String(input.suggestedChange || '').trim(),
+      payload: input.payload && typeof input.payload === 'object'
+        ? input.payload as any
+        : undefined,
       risk: input.risk === 'low' || input.risk === 'high' ? input.risk : 'medium',
     })
     return { output: `Created proposal ${proposal.id}: ${proposal.title}` }

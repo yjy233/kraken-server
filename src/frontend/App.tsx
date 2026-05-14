@@ -381,10 +381,14 @@ export default function App() {
             counts={evolution.counts}
             loading={evolution.loading}
             error={evolution.error}
+            workspaceRoot={effectiveWorkspaceRoot}
+            sessionId={sessions.activeSession?.id || null}
             onFilterChange={evolution.setFilter}
             onRefresh={evolution.refresh}
             onAccept={evolution.accept}
             onReject={evolution.reject}
+            onDryRunApply={evolution.dryRunApply}
+            onApply={evolution.apply}
           />
         )}
       </main>

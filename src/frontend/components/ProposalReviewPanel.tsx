@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import type { EvolutionProposal } from '../types.js'
+import type { EvolutionProposal, ProposalApplyResponse } from '../types.js'
 import type { ProposalFilter } from '../hooks/useEvolutionProposals.js'
 
 interface ProposalReviewPanelProps {
@@ -8,10 +8,22 @@ interface ProposalReviewPanelProps {
   counts: Record<ProposalFilter, number>
   loading: boolean
   error: string | null
+  workspaceRoot: string
+  sessionId: string | null
   onFilterChange: (filter: ProposalFilter) => void
   onRefresh: () => Promise<unknown>
   onAccept: (proposalId: string, reviewNote?: string) => Promise<unknown>
   onReject: (proposalId: string, reviewNote?: string) => Promise<unknown>
+  onDryRunApply: (
+    proposalId: string,
+    workspaceRoot?: string,
+    sessionId?: string | null
+  ) => Promise<ProposalApplyResponse>
+  onApply: (
+    proposalId: string,
+    workspaceRoot?: string,
+    sessionId?: string | null
+  ) => Promise<ProposalApplyResponse>
 }
 
 const FILTERS: ProposalFilter[] = ['pending', 'accepted', 'rejected', 'applied', 'all']
@@ -22,15 +34,20 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
   counts,
   loading,
   error,
+  workspaceRoot,
+  sessionId,
   onFilterChange,
   onRefresh,
   onAccept,
   onReject,
+  onDryRunApply,
+  onApply,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [applyPreviews, setApplyPreviews] = useState<Record<string, ProposalApplyResponse>>({})
 
   const pendingCount = counts.pending || 0
   const visibleTitle = useMemo(() => {
@@ -47,7 +64,7 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
     }))
   }, [])
 
-  const runAction = useCallback(async (
+  const runReviewAction = useCallback(async (
     proposal: EvolutionProposal,
     action: 'accept' | 'reject'
   ) => {
@@ -72,6 +89,28 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
       setPendingAction(null)
     }
   }, [onAccept, onReject, reviewNotes])
+
+  const runApplyAction = useCallback(async (
+    proposal: EvolutionProposal,
+    action: 'preview' | 'apply'
+  ) => {
+    const actionKey = `${action}:${proposal.id}`
+    setPendingAction(actionKey)
+    setActionError(null)
+    try {
+      const result = action === 'preview'
+        ? await onDryRunApply(proposal.id, workspaceRoot, sessionId)
+        : await onApply(proposal.id, workspaceRoot, sessionId)
+      setApplyPreviews((prev) => ({
+        ...prev,
+        [proposal.id]: result,
+      }))
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPendingAction(null)
+    }
+  }, [onApply, onDryRunApply, sessionId, workspaceRoot])
 
   return (
     <section className="proposal-panel">
@@ -167,6 +206,7 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
                         <ProposalMeta label="Source Sessions" value={proposal.sourceSessionIds.join(', ') || '-'} />
                         <ProposalMeta label="Updated" value={formatDateTime(proposal.updatedAt)} />
                         <ProposalMeta label="Reviewed" value={proposal.reviewedAt ? formatDateTime(proposal.reviewedAt) : '-'} />
+                        <ProposalMeta label="Applied" value={proposal.appliedAt ? formatDateTime(proposal.appliedAt) : '-'} />
                         <ProposalMeta label="Review Note" value={proposal.reviewNote || '-'} />
                       </div>
 
@@ -186,7 +226,7 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
                               className="ghost-button proposal-accept-button"
                               type="button"
                               disabled={pendingAction !== null}
-                              onClick={() => void runAction(proposal, 'accept')}
+                              onClick={() => void runReviewAction(proposal, 'accept')}
                             >
                               {pendingAction === `accept:${proposal.id}` ? 'Accepting...' : 'Accept'}
                             </button>
@@ -194,9 +234,34 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
                               className="ghost-button workspace-danger-button"
                               type="button"
                               disabled={pendingAction !== null}
-                              onClick={() => void runAction(proposal, 'reject')}
+                              onClick={() => void runReviewAction(proposal, 'reject')}
                             >
                               {pendingAction === `reject:${proposal.id}` ? 'Rejecting...' : 'Reject'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : proposal.status === 'accepted' ? (
+                        <div className="proposal-review-box">
+                          <div className="proposal-apply-copy">
+                            <strong>Apply to workspace</strong>
+                            <span>{workspaceRoot || 'Default workspace'}</span>
+                          </div>
+                          <div className="proposal-actions">
+                            <button
+                              className="ghost-button"
+                              type="button"
+                              disabled={pendingAction !== null}
+                              onClick={() => void runApplyAction(proposal, 'preview')}
+                            >
+                              {pendingAction === `preview:${proposal.id}` ? 'Previewing...' : 'Preview Apply'}
+                            </button>
+                            <button
+                              className="ghost-button proposal-accept-button"
+                              type="button"
+                              disabled={pendingAction !== null}
+                              onClick={() => void runApplyAction(proposal, 'apply')}
+                            >
+                              {pendingAction === `apply:${proposal.id}` ? 'Applying...' : 'Apply'}
                             </button>
                           </div>
                         </div>
@@ -205,6 +270,7 @@ export const ProposalReviewPanel: React.FC<ProposalReviewPanelProps> = ({
                           This proposal is {proposal.status}. Use a follow-up proposal for further changes.
                         </div>
                       )}
+                      <ProposalApplyResultView result={applyPreviews[proposal.id] || proposalApplyResultToResponse(proposal)} />
                     </div>
                   )}
                 </article>
@@ -245,6 +311,54 @@ const ProposalMeta: React.FC<{ label: string; value: string }> = ({ label, value
     <strong>{value}</strong>
   </div>
 )
+
+const ProposalApplyResultView: React.FC<{ result: ProposalApplyResponse | null }> = ({ result }) => {
+  if (!result) {
+    return null
+  }
+  return (
+    <section className="proposal-apply-result">
+      <div className="proposal-apply-result-header">
+        <h5>{result.dryRun ? 'Apply Preview' : 'Apply Result'}</h5>
+        {result.auditPath ? <span>{result.auditPath}</span> : null}
+      </div>
+      {result.changedFiles.length > 0 ? (
+        <div className="proposal-changed-files">
+          {result.changedFiles.map((file) => (
+            <span key={file}>{file}</span>
+          ))}
+        </div>
+      ) : null}
+      {result.validation.length > 0 ? (
+        <div className="proposal-validation-list">
+          {result.validation.map((item) => (
+            <div key={item.name} data-ok={item.ok}>
+              <strong>{item.name}</strong>
+              <span>{item.output}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {result.preview ? (
+        <ProposalSection title="Apply Preview" value={result.preview} mono />
+      ) : null}
+    </section>
+  )
+}
+
+function proposalApplyResultToResponse(proposal: EvolutionProposal): ProposalApplyResponse | null {
+  if (!proposal.applyResult) {
+    return null
+  }
+  return {
+    proposal,
+    dryRun: false,
+    changedFiles: proposal.applyResult.changedFiles || [],
+    preview: proposal.applyResult.preview || proposal.applyResult.error || '',
+    validation: proposal.applyResult.validation || [],
+    ...(proposal.applyResult.auditPath ? { auditPath: proposal.applyResult.auditPath } : {}),
+  }
+}
 
 function capitalize(value: string): string {
   return value.slice(0, 1).toUpperCase() + value.slice(1)
