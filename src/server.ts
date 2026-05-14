@@ -311,6 +311,32 @@ app.get('/api/evolution/proposals', async (req, res, next) => {
   }
 })
 
+app.post('/api/evolution/proposals/:proposalId/accept', async (req, res, next) => {
+  try {
+    const proposal = await proposalStore.updateStatus({
+      id: req.params.proposalId,
+      status: 'accepted',
+      reviewNote: typeof req.body?.reviewNote === 'string' ? req.body.reviewNote : undefined,
+    })
+    res.json({ ok: true, proposal })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/evolution/proposals/:proposalId/reject', async (req, res, next) => {
+  try {
+    const proposal = await proposalStore.updateStatus({
+      id: req.params.proposalId,
+      status: 'rejected',
+      reviewNote: typeof req.body?.reviewNote === 'string' ? req.body.reviewNote : undefined,
+    })
+    res.json({ ok: true, proposal })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/workspace/tree', async (req, res, next) => {
   try {
     const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : ''

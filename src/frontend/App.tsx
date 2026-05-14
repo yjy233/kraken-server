@@ -6,18 +6,20 @@ import type { ImageBlock } from './types.js'
 import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
 import { WorkspacePanel } from './components/WorkspacePanel.js'
 import { ModelUsagePanel } from './components/ModelUsagePanel.js'
+import { ProposalReviewPanel } from './components/ProposalReviewPanel.js'
 import { ContextWindowMeter } from './components/ContextWindowMeter.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
 import { useChat } from './hooks/useChat.js'
 import { useScheduledJobs } from './hooks/useScheduledJobs.js'
 import { useModelUsage } from './hooks/useModelUsage.js'
+import { useEvolutionProposals } from './hooks/useEvolutionProposals.js'
 import type { SessionSandboxConfig } from './types.js'
 
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
-  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage' | 'evolution'>('chat')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
@@ -64,6 +66,7 @@ export default function App() {
   )
   const scheduled = useScheduledJobs(activeTab === 'scheduled')
   const modelUsage = useModelUsage(activeTab === 'usage')
+  const evolution = useEvolutionProposals(activeTab === 'evolution')
 
   useEffect(() => {
     const hasSucceededExecution = Object.values(scheduled.executionsByJob)
@@ -179,6 +182,14 @@ export default function App() {
               >
                 Usage
               </button>
+              <button
+                className="panel-tab"
+                type="button"
+                data-active={activeTab === 'evolution'}
+                onClick={() => setActiveTab('evolution')}
+              >
+                Evolution
+              </button>
             </div>
 
             {activeTab === 'chat' ? (
@@ -235,11 +246,18 @@ export default function App() {
                   Create one-off, interval, and cron jobs. Jobs can bootstrap from a template session and optionally create a fresh session on each run.
                 </p>
               </div>
-            ) : (
+            ) : activeTab === 'usage' ? (
               <div className="scheduled-header-copy">
                 <h2>Model Usage</h2>
                 <p>
                   Track model requests, token totals, cache hits, usage fields, and cost by model.
+                </p>
+              </div>
+            ) : (
+              <div className="scheduled-header-copy">
+                <h2>Evolution Proposals</h2>
+                <p>
+                  Review self-improvement proposals before they change long-term behavior.
                 </p>
               </div>
             )}
@@ -278,7 +296,7 @@ export default function App() {
                 Refresh jobs
               </button>
             </div>
-          ) : (
+          ) : activeTab === 'usage' ? (
             <div className="header-meta">
               <span className="session-count">
                 {modelUsage.summary
@@ -292,6 +310,18 @@ export default function App() {
               </span>
               <button className="ghost-button" type="button" onClick={() => void modelUsage.refresh()}>
                 Refresh usage
+              </button>
+            </div>
+          ) : (
+            <div className="header-meta">
+              <span className="session-count">
+                {evolution.counts.pending} pending
+              </span>
+              <span className="model-pill">
+                {evolution.counts.all} total
+              </span>
+              <button className="ghost-button" type="button" onClick={() => void evolution.refresh()}>
+                Refresh proposals
               </button>
             </div>
           )}
@@ -337,12 +367,24 @@ export default function App() {
             onLoadExecutions={scheduled.loadExecutions}
             onOpenSession={handleOpenScheduledSession}
           />
-        ) : (
+        ) : activeTab === 'usage' ? (
           <ModelUsagePanel
             summary={modelUsage.summary}
             loading={modelUsage.loading}
             error={modelUsage.error}
             onRefresh={modelUsage.refresh}
+          />
+        ) : (
+          <ProposalReviewPanel
+            proposals={evolution.proposals}
+            filter={evolution.filter}
+            counts={evolution.counts}
+            loading={evolution.loading}
+            error={evolution.error}
+            onFilterChange={evolution.setFilter}
+            onRefresh={evolution.refresh}
+            onAccept={evolution.accept}
+            onReject={evolution.reject}
           />
         )}
       </main>

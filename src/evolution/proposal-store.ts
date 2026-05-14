@@ -16,6 +16,12 @@ export interface ProposalStore {
     risk?: 'low' | 'medium' | 'high'
   }): Promise<EvolutionProposal>
   list(status?: EvolutionProposal['status']): Promise<EvolutionProposal[]>
+  get(id: string): Promise<EvolutionProposal | null>
+  updateStatus(input: {
+    id: string
+    status: Extract<EvolutionProposal['status'], 'accepted' | 'rejected'>
+    reviewNote?: string
+  }): Promise<EvolutionProposal>
 }
 
 export function createProposalStore(memoryDir: string): ProposalStore {
@@ -60,9 +66,67 @@ export function createProposalStore(memoryDir: string): ProposalStore {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }
 
+  async function get(id: string): Promise<EvolutionProposal | null> {
+    const normalizedId = id.trim()
+    if (!normalizedId) {
+      return null
+    }
+    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
+    const valid = proposals.filter(isEvolutionProposal)
+    return valid.find((proposal) => proposal.id === normalizedId) || null
+  }
+
+  async function updateStatus(input: {
+    id: string
+    status: Extract<EvolutionProposal['status'], 'accepted' | 'rejected'>
+    reviewNote?: string
+  }): Promise<EvolutionProposal> {
+    const normalizedId = input.id.trim()
+    if (!normalizedId) {
+      throw new Error('proposal id is required')
+    }
+
+    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
+    const valid = proposals.filter(isEvolutionProposal)
+    const existing = valid.find((proposal) => proposal.id === normalizedId)
+    if (!existing) {
+      throw new Error('Proposal not found')
+    }
+    if (existing.status === 'applied') {
+      throw new Error('Applied proposals cannot be changed')
+    }
+
+    const timestamp = new Date().toISOString()
+    const reviewNote = normalizeReviewNote(input.reviewNote)
+    const updated: EvolutionProposal = {
+      ...existing,
+      status: input.status,
+      updatedAt: timestamp,
+      reviewedAt: timestamp,
+    }
+    if (reviewNote) {
+      updated.reviewNote = reviewNote
+    } else {
+      delete updated.reviewNote
+    }
+
+    await rewriteProposals(valid.map((proposal) => proposal.id === normalizedId ? updated : proposal))
+    return updated
+  }
+
+  async function rewriteProposals(proposals: EvolutionProposal[]): Promise<void> {
+    await fs.mkdir(path.dirname(proposalPath), { recursive: true })
+    const tmpPath = `${proposalPath}.${process.pid}.tmp`
+    const body = proposals.map((proposal) => JSON.stringify(proposal)).join('\n')
+    await fs.writeFile(tmpPath, body ? `${body}\n` : '', 'utf8')
+    await fs.rename(tmpPath, proposalPath)
+  }
+
   return {
     create,
     list,
+    get,
+    updateStatus,
   }
 }
 
@@ -99,4 +163,10 @@ function isEvolutionProposal(value: unknown): value is EvolutionProposal {
     typeof proposal.title === 'string' &&
     typeof proposal.suggestedChange === 'string' &&
     typeof proposal.status === 'string'
+}
+
+function normalizeReviewNote(value: unknown): string {
+  return typeof value === 'string'
+    ? value.replace(/\s+/g, ' ').trim().slice(0, 1000)
+    : ''
 }

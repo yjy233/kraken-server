@@ -19,6 +19,8 @@ export interface EvolutionProposal {
   patch?: string
   risk: 'low' | 'medium' | 'high'
   status: 'pending' | 'accepted' | 'rejected' | 'applied'
+  reviewNote?: string
+  reviewedAt?: string
   createdAt: string
   updatedAt: string
 }

@@ -14,6 +14,8 @@ import type {
   WorkspaceFile,
   WorkspaceListing,
   ModelUsageSummary,
+  EvolutionProposal,
+  EvolutionProposalStatus,
   AgentContentBlock,
 } from './types.js'
 
@@ -105,6 +107,44 @@ export async function fetchSchedulerStatus(): Promise<SchedulerStatus> {
 
 export async function fetchModelUsage(): Promise<ModelUsageSummary> {
   return request('/api/model-usage')
+}
+
+export async function fetchEvolutionProposals(status?: EvolutionProposalStatus | 'all'): Promise<EvolutionProposal[]> {
+  const query = new URLSearchParams()
+  if (status && status !== 'all') {
+    query.set('status', status)
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const data = await request<{ proposals: EvolutionProposal[] }>(`/api/evolution/proposals${suffix}`)
+  return data.proposals
+}
+
+export async function acceptEvolutionProposal(
+  proposalId: string,
+  reviewNote?: string
+): Promise<EvolutionProposal> {
+  const data = await request<{ proposal: EvolutionProposal }>(
+    `/api/evolution/proposals/${encodeURIComponent(proposalId)}/accept`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reviewNote: reviewNote || '' }),
+    }
+  )
+  return data.proposal
+}
+
+export async function rejectEvolutionProposal(
+  proposalId: string,
+  reviewNote?: string
+): Promise<EvolutionProposal> {
+  const data = await request<{ proposal: EvolutionProposal }>(
+    `/api/evolution/proposals/${encodeURIComponent(proposalId)}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reviewNote: reviewNote || '' }),
+    }
+  )
+  return data.proposal
 }
 
 export async function fetchWorkspaceTree(params: {
