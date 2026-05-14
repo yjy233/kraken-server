@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
-import type { EvolutionProposal, EvolutionProposalType } from './types.js'
+import type { EvolutionProposal, EvolutionProposalPayload, EvolutionProposalType, ProposalApplyResult } from './types.js'
 
 export interface ProposalStore {
   create(input: {
@@ -13,6 +13,7 @@ export interface ProposalStore {
     sourceSessionIds?: string[]
     suggestedChange: string
     patch?: string
+    payload?: EvolutionProposalPayload
     risk?: 'low' | 'medium' | 'high'
   }): Promise<EvolutionProposal>
   list(status?: EvolutionProposal['status']): Promise<EvolutionProposal[]>
@@ -21,6 +22,14 @@ export interface ProposalStore {
     id: string
     status: Extract<EvolutionProposal['status'], 'accepted' | 'rejected'>
     reviewNote?: string
+  }): Promise<EvolutionProposal>
+  markApplied(input: {
+    id: string
+    applyResult: ProposalApplyResult
+  }): Promise<EvolutionProposal>
+  markApplyFailed(input: {
+    id: string
+    applyResult: ProposalApplyResult
   }): Promise<EvolutionProposal>
 }
 
@@ -36,6 +45,7 @@ export function createProposalStore(memoryDir: string): ProposalStore {
     sourceSessionIds?: string[]
     suggestedChange: string
     patch?: string
+    payload?: EvolutionProposalPayload
     risk?: 'low' | 'medium' | 'high'
   }): Promise<EvolutionProposal> {
     const timestamp = new Date().toISOString()
@@ -54,6 +64,9 @@ export function createProposalStore(memoryDir: string): ProposalStore {
     }
     if (input.patch) {
       proposal.patch = input.patch
+    }
+    if (input.payload) {
+      proposal.payload = input.payload
     }
     await appendJsonLine(proposalPath, proposal)
     return proposal
@@ -114,6 +127,68 @@ export function createProposalStore(memoryDir: string): ProposalStore {
     return updated
   }
 
+  async function markApplied(input: {
+    id: string
+    applyResult: ProposalApplyResult
+  }): Promise<EvolutionProposal> {
+    return updateApplyResult({
+      id: input.id,
+      status: 'applied',
+      applyResult: input.applyResult,
+    })
+  }
+
+  async function markApplyFailed(input: {
+    id: string
+    applyResult: ProposalApplyResult
+  }): Promise<EvolutionProposal> {
+    return updateApplyResult({
+      id: input.id,
+      status: 'accepted',
+      applyResult: input.applyResult,
+    })
+  }
+
+  async function updateApplyResult(input: {
+    id: string
+    status: Extract<EvolutionProposal['status'], 'accepted' | 'applied'>
+    applyResult: ProposalApplyResult
+  }): Promise<EvolutionProposal> {
+    const normalizedId = input.id.trim()
+    if (!normalizedId) {
+      throw new Error('proposal id is required')
+    }
+
+    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
+    const valid = proposals.filter(isEvolutionProposal)
+    const existing = valid.find((proposal) => proposal.id === normalizedId)
+    if (!existing) {
+      throw new Error('Proposal not found')
+    }
+    if (existing.status === 'rejected') {
+      throw new Error('Rejected proposals cannot be applied')
+    }
+    if (existing.status === 'applied') {
+      throw new Error('Proposal is already applied')
+    }
+
+    const timestamp = new Date().toISOString()
+    const updated: EvolutionProposal = {
+      ...existing,
+      status: input.status,
+      applyResult: input.applyResult,
+      updatedAt: timestamp,
+    }
+    if (input.status === 'applied') {
+      updated.appliedAt = input.applyResult.appliedAt || timestamp
+    } else {
+      delete updated.appliedAt
+    }
+
+    await rewriteProposals(valid.map((proposal) => proposal.id === normalizedId ? updated : proposal))
+    return updated
+  }
+
   async function rewriteProposals(proposals: EvolutionProposal[]): Promise<void> {
     await fs.mkdir(path.dirname(proposalPath), { recursive: true })
     const tmpPath = `${proposalPath}.${process.pid}.tmp`
@@ -127,6 +202,8 @@ export function createProposalStore(memoryDir: string): ProposalStore {
     list,
     get,
     updateStatus,
+    markApplied,
+    markApplyFailed,
   }
 }
 

@@ -4,7 +4,7 @@
 
 这份方案描述如何把 `kraken-server` 做成一个贴近 Hermes Agent 架构的 self-improving agent：它不通过微调模型变聪明，而是通过运行中的反馈闭环持续沉淀记忆、改进技能、整理失败经验，并把高风险改动变成可审计 proposal。
 
-现有的 [`memory-evolution-system.md`](./memory-evolution-system.md) 已经定义了记忆与提案的基础模型；本文补充更贴近 Hermes Agent 的运行架构、模块边界和实施路径。
+现有的 [`memory-evolution-system.md`](./memory-evolution-system.md) 已经定义了记忆与提案的基础模型；本文补充更贴近 Hermes Agent 的运行架构、模块边界和实施路径。Approved proposal 如何进一步落盘修改工作目录 `memories/` 与 `skills/`，见 [`hermes-style-proposal-apply.md`](./hermes-style-proposal-apply.md)。
 
 核心原则：
 
@@ -25,7 +25,7 @@ Hermes Agent 的自进化可以拆成四个可借鉴机制：
 | Skill self-improvement | `skill_install` / `skill` + skill usage telemetry + skill proposal |
 | Curator | `src/evolution/curator.ts` + scheduler maintenance jobs |
 
-Kraken 不建议第一阶段照搬 Hermes 的“自动改技能”能力。Kraken 已经有 shell、file write、skill install、Feishu 等高影响工具，自动修改行为面太大。推荐先做 proposal-only 自进化：Agent 可以观察、总结、建议、生成 patch 草案，但应用必须由人确认。
+Kraken 不建议第一阶段照搬 Hermes 的“自动改技能”能力。Kraken 已经有 shell、file write、skill install、Feishu 等高影响工具，自动修改行为面太大。推荐先做 proposal-governed 自进化：Agent 可以观察、总结、建议、生成 patch 草案；用户 approve 后，再由受控 apply service 修改工作目录下的 `memories/MEMORY.md`、`memories/USED.md` 和 `skills/<name>/SKILL.md`。
 
 ## 2.1 分层架构总览
 
@@ -43,7 +43,7 @@ Kraken 的自进化系统可以理解为一个贴在主 Agent Runtime 旁边的 
 | L3 | Persistent Memory | 跨 session 的 scoped memory 检索和写入 | `.memory/memories.jsonl` |
 | L4 | Reflection & Extraction | run 后抽取候选记忆、失败经验、改进信号 | `extractMemoryCandidates` |
 | L5 | Skill Evolution | 把重复流程升维成 skill proposal | `skill_create` proposal |
-| L6 | Governance | 对 prompt/skill/code/tool policy 变更做人审和审计 | proposal-only |
+| L6 | Governance | 对 prompt/skill/code/tool policy 变更做人审和审计 | proposal-governed |
 
 已有的 PNG 图资产可以作为当前版本的报告图：
 
@@ -389,7 +389,7 @@ L5 的验收点：
 
 ## 3.7 L6 Governance 层
 
-Governance 是 Kraken 和 Hermes 最大的差异。Hermes 更偏个人 agent，可以更积极自改；Kraken 连接 Feishu、shell、文件写入和 skill install，因此必须 proposal-only。
+Governance 是 Kraken 和 Hermes 最大的差异。Hermes 更偏个人 agent，可以更积极自改；Kraken 连接 Feishu、shell、文件写入和 skill install，因此必须 proposal-governed。也就是：agent/curator 只能生成 proposal；用户 approve 以后，后端 apply service 才能通过受控 memory/skill adapters 修改长期行为资产。
 
 ![Governance layer](./images/mermaid/governance-layer.png)
 
@@ -426,6 +426,12 @@ L6 的应用链路应该和“生成 proposal”完全解耦：
 | `POST /api/evolution/proposals/:id/accept` | 只改状态，不应用 |
 | `POST /api/evolution/proposals/:id/reject` | 记录拒绝原因 |
 | `POST /api/evolution/proposals/:id/apply` | 执行受控 apply + validation + audit |
+
+Approved proposal 的 apply 设计单独维护在 [`hermes-style-proposal-apply.md`](./hermes-style-proposal-apply.md)，第一阶段只建议落地：
+
+- `memory_write` / `memory_merge` 修改 `<workspace>/memories/MEMORY.md` 和 `<workspace>/memories/USED.md`
+- `skill_create` 在 `<workspace>/skills/<skill-name>/` 创建 `SKILL.md` 与 references
+- `skill_patch` 只在完成 dry-run、validation、audit 后修改已有 workspace skill
 
 L6 的验收点：
 
@@ -583,11 +589,11 @@ Curator 必须禁用递归自进化：
 - 不执行 shell/file write，除非运行 deterministic maintenance
 - 使用低权限辅助模型
 
-## 6. Proposal-Only 治理
+## 6. Proposal-Governed 治理
 
-所有会改变未来行为的动作都进入 proposal。
+所有会改变未来行为的动作都进入 proposal。Proposal approved 后仍不等于已经落盘；只有用户显式 apply，才会进入受控 apply service。
 
-![Proposal-only governance flow](./images/mermaid/proposal-only-governance-flow.png)
+![Proposal-governed governance flow](./images/mermaid/proposal-only-governance-flow.png)
 
 Proposal 类型：
 
@@ -629,6 +635,23 @@ interface EvolutionProposal {
 | `skill_patch` | 必须人工确认 |
 | `tool_policy` | 必须人工确认 |
 | `code_followup` | 只生成 issue/TODO，不自动改代码 |
+
+靠近 Hermes 的 workspace 资产形态：
+
+```text
+<workspace>/
+├── memories/
+│   ├── MEMORY.md
+│   └── USED.md
+└── skills/
+    └── <skill-name>/
+        ├── SKILL.md
+        ├── references/
+        ├── scripts/
+        └── assets/
+```
+
+`MEMORY.md` 承载项目级长期记忆，`USED.md` 承载 proposal apply 和后续检索使用痕迹。`skills/` 会被现有 skill discovery 扫描，approved skill proposal apply 后可以新增或修改 workspace-local skill。
 
 ## 7. Prompt 注入设计
 
@@ -924,12 +947,13 @@ const SECRET_PATTERNS = [
 
 当前 MVP 还没有做：
 
-- Evolution 前端面板
-- proposal accept/reject/apply API
+- proposal apply API
 - curator scheduler job
 - skill usage telemetry
 - SQLite/FTS5/embedding
 - streaming memory scrubber
+
+当前已经有 Evolution 前端面板和 proposal accept/reject API；apply API 和 workspace memory/skill adapters 仍待实现，具体方案见 [`hermes-style-proposal-apply.md`](./hermes-style-proposal-apply.md)。
 
 ## 15. 图资产状态
 
