@@ -13,7 +13,6 @@ const OPENROUTER_BASE_URL = normalizeBaseUrl(process.env.OPENROUTER_BASE_URL || 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''
 const OPENROUTER_PROMPT_CACHE = parseBoolean(process.env.OPENROUTER_PROMPT_CACHE, true)
 const OPENROUTER_PROMPT_CACHE_TYPE = process.env.OPENROUTER_PROMPT_CACHE_TYPE || 'ephemeral'
-const OPENROUTER_PROXY = firstNonEmpty(process.env.OPENROUTER_PROXY, process.env.HTTPS_PROXY, process.env.HTTP_PROXY)
 
 type OpenRouterMessage = {
   role?: unknown
@@ -49,7 +48,7 @@ function getOpenRouterProvider() {
     'HTTP-Referer': process.env.OPENROUTER_REFERER || 'http://localhost',
     'X-Title': process.env.OPENROUTER_APP_TITLE || 'Kraken Agent',
   }
-  if (OPENROUTER_PROXY || (OPENROUTER_PROMPT_CACHE && isOpenRouterBaseUrl(OPENROUTER_BASE_URL))) {
+  if (OPENROUTER_PROMPT_CACHE && isOpenRouterBaseUrl(OPENROUTER_BASE_URL)) {
     options.fetch = openRouterFetch
   }
   return createOpenAI(options)
@@ -287,15 +286,6 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
-function firstNonEmpty(...values: Array<string | undefined>): string {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
-    }
-  }
-  return ''
-}
-
 function isOpenRouterBaseUrl(value: string): boolean {
   try {
     return new URL(value).hostname === 'openrouter.ai'
@@ -308,21 +298,10 @@ async function openRouterFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   const body = typeof init?.body === 'string'
     ? addOpenRouterPromptCacheControl(init.body)
     : init?.body
-  const dispatcher = OPENROUTER_PROXY ? await createProxyDispatcher(OPENROUTER_PROXY) : undefined
   return fetch(input, {
     ...init,
     body,
-    dispatcher,
   } as RequestInit)
-}
-
-async function createProxyDispatcher(proxyUrl: string): Promise<unknown> {
-  try {
-    const { ProxyAgent } = await import('undici')
-    return new ProxyAgent(proxyUrl)
-  } catch {
-    return undefined
-  }
 }
 
 function addOpenRouterPromptCacheControl(body: string): string {
