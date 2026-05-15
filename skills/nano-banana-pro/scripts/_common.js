@@ -83,8 +83,6 @@ export function resolveProxyUrl(args) {
   }
   const proxy = firstNonEmpty(
     process.env.NANO_BANANA_PROXY,
-    process.env.HTTPS_PROXY,
-    process.env.HTTP_PROXY,
     DEFAULT_PROXY_URL,
   )
   return proxy || null
