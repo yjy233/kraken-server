@@ -301,7 +301,7 @@ Reflection 层在 run 后工作。它不影响当前回复速度的关键路径�
 | --- | --- |
 | 用户说“记住/以后/偏好/不要” | `preference` memory |
 | assistant 多次给出相同 workflow | `procedure` memory 或 `skill_create` proposal |
-| tool error | `failure` memory + `code_followup` proposal |
+| tool error | `failure` memory proposal |
 | 明确文件路径 | `artifact` memory |
 | 用户纠正模型 | `decision` 或 `failure` memory |
 
@@ -399,12 +399,9 @@ Governance 是 Kraken 和 Hermes 最大的差异。Hermes 更偏个人 agent，�
 | --- | --- | --- |
 | `memory_write` | low/medium | 用户明确“记住”时可直接写，其他需要确认 |
 | `memory_merge` | low | deterministic merge 可自动 |
-| `prompt_patch` | high | 不自动 |
+| `agents_patch` | medium | approve 后由 apply service 写入 `<workspace>/AGENTS.md` |
 | `skill_create` | medium/high | 不自动 |
 | `skill_patch` | medium/high | 不自动 |
-| `tool_policy` | high | 不自动 |
-| `doc_update` | low/medium | 可生成 patch，但要确认 |
-| `code_followup` | high | 只生成 TODO/issue，不自动改代码 |
 
 审计要求：
 
@@ -430,12 +427,13 @@ L6 的应用链路应该和“生成 proposal”完全解耦：
 Approved proposal 的 apply 设计单独维护在 [`hermes-style-proposal-apply.md`](./hermes-style-proposal-apply.md)，第一阶段只建议落地：
 
 - `memory_write` / `memory_merge` 修改 `<workspace>/memories/MEMORY.md` 和 `<workspace>/memories/USED.md`
+- `agents_patch` 修改 `<workspace>/AGENTS.md`
 - `skill_create` 在 `<workspace>/skills/<skill-name>/` 创建 `SKILL.md` 与 references
 - `skill_patch` 只在完成 dry-run、validation、audit 后修改已有 workspace skill
 
 L6 的验收点：
 
-- `prompt_patch`、`skill_patch`、`tool_policy` 不存在静默应用路径。
+- `skill_patch` 不存在静默应用路径，必须 approve + apply。
 - apply 前后能看到 diff 或结构化变更。
 - build/test/smoke 失败时 proposal 保持 accepted 但不标记 applied。
 
@@ -601,12 +599,9 @@ Proposal 类型：
 type EvolutionProposalType =
   | 'memory_write'
   | 'memory_merge'
-  | 'prompt_patch'
+  | 'agents_patch'
   | 'skill_create'
   | 'skill_patch'
-  | 'tool_policy'
-  | 'doc_update'
-  | 'code_followup'
 
 interface EvolutionProposal {
   id: string
@@ -630,11 +625,9 @@ interface EvolutionProposal {
 | --- | --- |
 | `memory_write` | 低风险可人工确认后写入 |
 | `memory_merge` | deterministic merge 可自动，LLM merge 需确认 |
-| `prompt_patch` | 必须人工确认 |
+| `agents_patch` | approve 后由 apply service 写入 `<workspace>/AGENTS.md` |
 | `skill_create` | 必须人工确认 |
 | `skill_patch` | 必须人工确认 |
-| `tool_policy` | 必须人工确认 |
-| `code_followup` | 只生成 issue/TODO，不自动改代码 |
 
 靠近 Hermes 的 workspace 资产形态：
 
@@ -1109,7 +1102,7 @@ Title: Proposal-only Governance.
 White background, readable English labels, technical document style.
 Main states: pending, accepted, rejected, applied.
 Flow: Agent or Curator creates proposal, Risk Classifier, Human Review, Accept or Reject, Apply Service, Validation, Audit Log.
-Show proposal types and risk levels in a compact side panel: memory_write low, memory_merge low, prompt_patch high, skill_patch high, tool_policy high, code_followup high.
+Show proposal types and risk levels in a compact side panel: memory_write low, memory_merge low, agents_patch medium, skill_create medium, skill_patch high.
 Emphasize: accepted does not mean applied; validation failure keeps proposal unapplied.
 No decorative gradients, no logos, no watermark, avoid tiny text.
 ```

@@ -8,16 +8,30 @@ export async function createPostRunProposals(input: {
 }): Promise<void> {
   const failureCount = input.completedRun.toolExecutions.filter((execution) => execution.isError).length
   if (failureCount > 0) {
+    const failureExecutions = input.completedRun.toolExecutions.filter((execution) => execution.isError)
     await input.proposalStore.create({
-      type: 'code_followup',
-      title: `Review ${failureCount} tool failure${failureCount === 1 ? '' : 's'} from run`,
-      rationale: 'The run produced tool failures that may indicate missing workflow knowledge, brittle tooling, or a needed skill update.',
+      type: 'memory_write',
+      title: `Remember ${failureCount} tool failure${failureCount === 1 ? '' : 's'} from run`,
+      rationale: 'The run produced tool failures that may be useful as long-term workflow memory after review.',
       sourceRunIds: [input.completedRun.runId],
       sourceSessionIds: [input.completedRun.sessionId],
-      suggestedChange: input.completedRun.toolExecutions
-        .filter((execution) => execution.isError)
-        .map((execution) => `Investigate ${execution.toolName}: ${execution.output.slice(0, 300)}`)
+      suggestedChange: failureExecutions
+        .map((execution) => `Tool ${execution.toolName} failed: ${execution.output.slice(0, 300)}`)
         .join('\n'),
+      payload: {
+        adapter: 'workspace_memory',
+        operation: 'append_memory',
+        entries: failureExecutions.map((execution) => ({
+          target: 'MEMORY.md',
+          kind: 'failure',
+          text: `Tool ${execution.toolName} failed: ${execution.output.slice(0, 300)}`,
+          tags: ['tool-failure', execution.toolName],
+          source: {
+            runIds: [input.completedRun.runId],
+            sessionIds: [input.completedRun.sessionId],
+          },
+        })),
+      },
       risk: 'low',
     })
   }

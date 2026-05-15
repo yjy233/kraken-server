@@ -447,12 +447,9 @@ Adapter 路由：
 | --- | --- |
 | `memory_write` | `workspace_memory` |
 | `memory_merge` | `workspace_memory` |
+| `agents_patch` | `workspace_agents` |
 | `skill_create` | `workspace_skill` |
 | `skill_patch` | `workspace_skill` |
-| `prompt_patch` | 暂不实现 apply，只 preview |
-| `tool_policy` | 暂不实现 apply，只 preview |
-| `doc_update` | 暂不在本方案覆盖 |
-| `code_followup` | 不 apply |
 
 ## 8. API 与前端
 
@@ -631,4 +628,3 @@ Audit：
 - 每次成功 apply 都写 `.memory/apply-audit/<proposalId>.json`。
 - 失败 apply 不标记 `applied`。
 - validation 失败时 proposal 保持 `accepted`。
-

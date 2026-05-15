@@ -105,13 +105,13 @@ export const memoryRememberTool: Tool = {
 
 export const proposalCreateTool: Tool = {
   name: 'proposal_create',
-  description: 'Create a self-improvement proposal for a prompt, skill, tool policy, documentation, or code follow-up. This does not apply changes.',
+  description: 'Create a self-improvement proposal for long-term workspace memory, AGENTS.md guidance, or skills. This does not apply changes.',
   inputSchema: {
     type: 'object',
     properties: {
       type: {
         type: 'string',
-        enum: ['memory_write', 'memory_merge', 'prompt_patch', 'skill_create', 'skill_patch', 'tool_policy', 'doc_update', 'code_followup'],
+        enum: ['memory_write', 'memory_merge', 'agents_patch', 'skill_create', 'skill_patch'],
       },
       title: { type: 'string' },
       rationale: { type: 'string' },
@@ -122,7 +122,7 @@ export const proposalCreateTool: Tool = {
       },
       payload: {
         type: 'object',
-        description: 'Optional structured apply payload for workspace_memory or workspace_skill adapters.',
+        description: 'Optional structured apply payload for workspace_memory, workspace_agents, or workspace_skill adapters.',
       },
     },
     required: ['type', 'title', 'rationale', 'suggestedChange'],
@@ -131,8 +131,9 @@ export const proposalCreateTool: Tool = {
     if (!ctx.proposalStore) {
       throw new Error('proposal store is not configured')
     }
+    const type = normalizeProposalType(input.type)
     const proposal = await ctx.proposalStore.create({
-      type: String(input.type || 'code_followup') as any,
+      type,
       title: String(input.title || '').trim(),
       rationale: String(input.rationale || '').trim(),
       suggestedChange: String(input.suggestedChange || '').trim(),
@@ -143,4 +144,18 @@ export const proposalCreateTool: Tool = {
     })
     return { output: `Created proposal ${proposal.id}: ${proposal.title}` }
   },
+}
+
+function normalizeProposalType(value: unknown): 'memory_write' | 'memory_merge' | 'agents_patch' | 'skill_create' | 'skill_patch' {
+  const type = typeof value === 'string' && value.trim() ? value.trim() : 'memory_write'
+  if (
+    type === 'memory_write' ||
+    type === 'memory_merge' ||
+    type === 'agents_patch' ||
+    type === 'skill_create' ||
+    type === 'skill_patch'
+  ) {
+    return type
+  }
+  throw new Error(`Unsupported proposal type: ${type}`)
 }

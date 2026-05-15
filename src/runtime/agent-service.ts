@@ -9,8 +9,9 @@ import {
   normalizeSessionSandboxConfig,
 } from '../tools/sandbox.js'
 import type { SessionSandboxConfig, SessionSandboxPolicy } from '../tools/types.js'
-import { getAvailableSkills } from '../skills/manager.js'
-import type { SkillRuntimeState } from '../skills/types.js'
+import { refreshSkills } from '../skills/manager.js'
+import { resolveWorkspaceSkillRoot } from '../skills/paths.js'
+import type { Skill, SkillRuntimeState } from '../skills/types.js'
 import { extractBaseSystemPrompt, PromptBuilder } from '../agent/prompt-builder.js'
 import {
   isRecord,
@@ -91,22 +92,23 @@ export function createAgentService(config: AgentServiceConfig) {
     return normalized || config.baseSystemPrompt
   }
 
-  function buildSystemPrompt(basePrompt: string, tools: ToolDefinition[]): string {
+  function buildSystemPrompt(basePrompt: string, tools: ToolDefinition[], availableSkills: Skill[]): string {
     return new PromptBuilder(
       normalizeSystemPrompt(basePrompt),
       tools,
-      getAvailableSkills()
+      availableSkills
     ).build()
   }
 
   function buildRuntimeSystemPrompt(input: {
     basePrompt: string
     tools: ToolDefinition[]
+    availableSkills: Skill[]
     sandboxPolicy: SessionSandboxPolicy
     memoryPromptBlock?: string
   }): string {
     const parts = [
-      buildSystemPrompt(input.basePrompt, input.tools),
+      buildSystemPrompt(input.basePrompt, input.tools, input.availableSkills),
       '',
       buildRuntimeDateContext(),
       '',
@@ -232,7 +234,7 @@ export function createAgentService(config: AgentServiceConfig) {
       loadedSkillNames: new Set(session.loadedSkills || []),
     }
 
-    const availableSkills = getAvailableSkills()
+    const availableSkills = refreshSkills([resolveWorkspaceSkillRoot(sandboxPolicy.workspaceRoot)])
     const toolRegistry = createToolRegistry(config.toolRegistryOptions, {
       sessionId: session.id,
       sessionSandbox: session.sandbox,
@@ -283,6 +285,7 @@ export function createAgentService(config: AgentServiceConfig) {
     const runtimeSystemPrompt = buildRuntimeSystemPrompt({
       basePrompt: effectiveSystemPrompt,
       tools: toolRegistry,
+      availableSkills,
       sandboxPolicy,
       memoryPromptBlock,
     })

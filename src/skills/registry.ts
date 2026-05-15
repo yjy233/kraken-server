@@ -13,9 +13,9 @@ import { getSkillDiscoveryDirs } from './paths.js'
  * 按优先级扫描所有 Skill 目录，返回去重后的 Skill 列表。
  * 高优先级目录中的同名 Skill 覆盖低优先级目录中的 Skill。
  */
-export function discoverSkills(): Skill[] {
+export function discoverSkills(extraDirs: string[] = []): Skill[] {
   const skillMap = new Map<string, Skill>()
-  const dirs = getSkillDiscoveryDirs()
+  const dirs = getSkillDiscoveryDirs(extraDirs)
 
   for (const dir of [...dirs].reverse()) {
     if (!fs.existsSync(dir)) continue

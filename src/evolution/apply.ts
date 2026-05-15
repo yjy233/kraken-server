@@ -10,6 +10,7 @@ import type {
   EvolutionProposal,
   ProposalApplyResult,
   ProposalApplyValidation,
+  WorkspaceAgentsProposalPayload,
   WorkspaceMemoryProposalEntry,
   WorkspaceMemoryProposalPayload,
   WorkspaceSkillCreateProposalPayload,
@@ -163,6 +164,9 @@ async function runAdapter(input: AdapterApplyInput): Promise<AdapterApplyOutput>
   if (input.proposal.type === 'memory_write' || input.proposal.type === 'memory_merge') {
     return applyWorkspaceMemory(input)
   }
+  if (input.proposal.type === 'agents_patch') {
+    return applyWorkspaceAgents(input)
+  }
   if (input.proposal.type === 'skill_create' || input.proposal.type === 'skill_patch') {
     return applyWorkspaceSkill(input)
   }
@@ -170,6 +174,9 @@ async function runAdapter(input: AdapterApplyInput): Promise<AdapterApplyOutput>
 }
 
 function adapterForProposal(proposal: EvolutionProposal): ProposalApplyResult['adapter'] {
+  if (proposal.type === 'agents_patch') {
+    return 'workspace_agents'
+  }
   if (proposal.type === 'skill_create' || proposal.type === 'skill_patch') {
     return 'workspace_skill'
   }
@@ -387,6 +394,147 @@ function ensureUsedHeading(value: string): string {
     return value.endsWith('\n') ? value : `${value}\n`
   }
   return `${trimmed}\n\n${USED_PROPOSALS_HEADING}\n`
+}
+
+async function applyWorkspaceAgents(input: AdapterApplyInput): Promise<AdapterApplyOutput> {
+  const payload = parseWorkspaceAgentsPayload(input.proposal)
+  const agentsPath = safeJoin(input.workspaceRoot, 'AGENTS.md')
+  const beforeAgents = await readTextIfExists(agentsPath)
+  const nextAgents = renderAgentsFile(beforeAgents, payload, input.proposal, input.appliedAt)
+  const before: Record<string, string> = {}
+  const after: Record<string, string> = {}
+  const changedFiles: string[] = []
+
+  if (nextAgents !== beforeAgents) {
+    changedFiles.push('AGENTS.md')
+    before['AGENTS.md'] = beforeAgents
+    after['AGENTS.md'] = nextAgents
+  }
+
+  const validation = validateTextMap(after)
+  if (changedFiles.length === 0) {
+    validation.push({ name: 'agents_noop', ok: true, output: 'No AGENTS.md changes to apply.' })
+  }
+  throwIfValidationFailed(validation)
+
+  if (!input.dryRun && nextAgents !== beforeAgents) {
+    await assertNoSymlinkPath(agentsPath)
+    await writeAtomic(agentsPath, nextAgents)
+  }
+
+  return {
+    adapter: 'workspace_agents',
+    changedFiles,
+    preview: buildPreview(before, after),
+    validation,
+    auditBefore: before,
+    auditAfter: after,
+  }
+}
+
+function parseWorkspaceAgentsPayload(proposal: EvolutionProposal): WorkspaceAgentsProposalPayload {
+  const rawPayload = normalizePayload(proposal)
+  if (
+    isRecord(rawPayload) &&
+    rawPayload.adapter === 'workspace_agents' &&
+    typeof rawPayload.content === 'string'
+  ) {
+    const operation = rawPayload.operation === 'replace_section' || rawPayload.operation === 'replace_file'
+      ? rawPayload.operation
+      : 'append_section'
+    const payload: WorkspaceAgentsProposalPayload = {
+      adapter: 'workspace_agents',
+      operation,
+      content: rawPayload.content.slice(0, MAX_PROPOSAL_TEXT_LENGTH),
+    }
+    if (typeof rawPayload.heading === 'string' && rawPayload.heading.trim()) {
+      payload.heading = normalizeAgentsHeading(rawPayload.heading)
+    }
+    return payload
+  }
+
+  const content = proposal.suggestedChange.trim() || proposal.rationale.trim() || proposal.title.trim()
+  if (!content) {
+    throw new Error('agents proposal has no content to apply')
+  }
+  return {
+    adapter: 'workspace_agents',
+    operation: 'append_section',
+    heading: proposal.title,
+    content,
+  }
+}
+
+function renderAgentsFile(
+  before: string,
+  payload: WorkspaceAgentsProposalPayload,
+  proposal: EvolutionProposal,
+  appliedAt: string
+): string {
+  const content = payload.content.trim()
+  if (!content) {
+    return before
+  }
+  if (payload.operation === 'replace_file') {
+    return ensureTrailingNewline(content)
+  }
+
+  const heading = normalizeAgentsHeading(payload.heading || 'Self Improvement Notes')
+  const section = renderAgentsSection(heading, content, proposal, appliedAt)
+  if (!before.trim()) {
+    return `# Repository Guidelines\n\n${section}`
+  }
+  if (hasMemoryText(before, content)) {
+    return before
+  }
+  if (payload.operation === 'replace_section') {
+    return replaceAgentsSection(before, heading, section)
+  }
+  return `${before.trimEnd()}\n\n${section}`
+}
+
+function renderAgentsSection(
+  heading: string,
+  content: string,
+  proposal: EvolutionProposal,
+  appliedAt: string
+): string {
+  return [
+    `## ${heading}`,
+    '',
+    `<!-- proposal:${proposal.id}; appliedAt:${appliedAt} -->`,
+    content,
+    '',
+  ].join('\n')
+}
+
+function replaceAgentsSection(before: string, heading: string, section: string): string {
+  const lines = before.split(/\r?\n/)
+  const startIndex = lines.findIndex((line) => /^##\s+/.test(line) && normalizeAgentsHeading(line) === heading)
+  if (startIndex >= 0) {
+    let endIndex = lines.length
+    for (let index = startIndex + 1; index < lines.length; index += 1) {
+      if (/^##\s+/.test(lines[index] || '')) {
+        endIndex = index
+        break
+      }
+    }
+    const nextLines = [
+      ...lines.slice(0, startIndex),
+      ...section.trimEnd().split('\n'),
+      '',
+      ...lines.slice(endIndex),
+    ]
+    return ensureTrailingNewline(nextLines.join('\n'))
+  }
+  return `${before.trimEnd()}\n\n${section}`
+}
+
+function normalizeAgentsHeading(value: string): string {
+  const normalized = singleLine(value)
+    .replace(/^#+\s*/, '')
+    .slice(0, 120)
+  return normalized || 'Self Improvement Notes'
 }
 
 async function applyWorkspaceSkill(input: AdapterApplyInput): Promise<AdapterApplyOutput> {
@@ -913,6 +1061,10 @@ function normalizeComparable(value: string): string {
 
 function singleLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
+}
+
+function ensureTrailingNewline(value: string): string {
+  return value.endsWith('\n') ? value : `${value}\n`
 }
 
 function slugify(value: string): string {

@@ -97,12 +97,9 @@ export interface ModelUsageSummary {
 export type EvolutionProposalType =
   | 'memory_write'
   | 'memory_merge'
-  | 'prompt_patch'
+  | 'agents_patch'
   | 'skill_create'
   | 'skill_patch'
-  | 'tool_policy'
-  | 'doc_update'
-  | 'code_followup'
 
 export type EvolutionProposalStatus = 'pending' | 'accepted' | 'rejected' | 'applied'
 
@@ -134,7 +131,7 @@ export interface ProposalApplyValidation {
 
 export interface ProposalApplyResult {
   ok: boolean
-  adapter: 'workspace_memory' | 'workspace_skill'
+  adapter: 'workspace_memory' | 'workspace_agents' | 'workspace_skill'
   changedFiles: string[]
   validation: ProposalApplyValidation[]
   preview: string

@@ -265,7 +265,7 @@ Agent 运行完成并保存 session 后，执行 post-run pipeline：
 ```ts
 interface EvolutionProposal {
   id: string
-  type: 'prompt_patch' | 'skill_patch' | 'tool_policy' | 'doc_update' | 'code_followup'
+  type: 'memory_write' | 'memory_merge' | 'agents_patch' | 'skill_create' | 'skill_patch'
   title: string
   rationale: string
   sourceRunIds: string[]

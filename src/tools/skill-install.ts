@@ -1,6 +1,7 @@
 import { initSkill, normalizeSkillName, validateSkillDir } from '../skills/authoring.js'
 import { installSkillFromClawHub, installSkillFromGitHub, linkSkillFromLocalDir } from '../skills/install.js'
-import { getAvailableSkills, getSkillInstallRoot } from '../skills/manager.js'
+import { getAvailableSkills } from '../skills/manager.js'
+import { resolveWorkspaceSkillRoot } from '../skills/paths.js'
 import type { Tool } from './types.js'
 
 export const skillInstallTool: Tool = {
@@ -45,7 +46,7 @@ export const skillInstallTool: Tool = {
       },
       base_dir: {
         type: 'string',
-        description: 'Base directory for creating a new local skill. Required for init_local.',
+        description: 'Base directory for creating a new local skill. Defaults to the current workspace skills directory.',
       },
       description: {
         type: 'string',
@@ -59,7 +60,7 @@ export const skillInstallTool: Tool = {
 
     if (action === 'install') {
       const source = String(input.source || 'github').trim()
-      const installRoot = getSkillInstallRoot()
+      const installRoot = getWorkspaceInstallRoot(ctx)
       const force = Boolean(input.force)
       let installed
 
@@ -104,7 +105,7 @@ export const skillInstallTool: Tool = {
         throw new Error(`Unsupported install source: ${source}`)
       }
 
-      const refreshed = ctx.refreshSkills()
+      const refreshed = ctx.refreshSkills([installRoot])
       ctx.setAvailableSkills(refreshed)
       const installedSkill = refreshed.find((skill) => skill.name === installed.skill.name) || installed.skill
 
@@ -121,10 +122,7 @@ export const skillInstallTool: Tool = {
 
     if (action === 'init_local') {
       const skillName = normalizeSkillName(String(input.name || '').trim())
-      const baseDir = String(input.base_dir || '').trim()
-      if (!baseDir) {
-        throw new Error('base_dir is required')
-      }
+      const baseDir = String(input.base_dir || '').trim() || getWorkspaceInstallRoot(ctx)
 
       const initParams: {
         skillName: string
@@ -187,14 +185,14 @@ export const skillInstallTool: Tool = {
         ].join('\n'))
       }
 
-      const installRoot = getSkillInstallRoot()
+      const installRoot = getWorkspaceInstallRoot(ctx)
       const linked = await linkSkillFromLocalDir({
         sourceDir: targetPath,
         installRoot,
         force: Boolean(input.force),
       })
 
-      const refreshed = ctx.refreshSkills()
+      const refreshed = ctx.refreshSkills([installRoot])
       ctx.setAvailableSkills(refreshed)
 
       return {
@@ -227,6 +225,10 @@ export const skillInstallTool: Tool = {
 
     throw new Error(`Unsupported skill_install action: ${action}`)
   },
+}
+
+function getWorkspaceInstallRoot(ctx: Parameters<Tool['execute']>[1]): string {
+  return resolveWorkspaceSkillRoot(ctx.sandboxPolicy.workspaceRoot)
 }
 
 function formatValidationMessages(validation: {

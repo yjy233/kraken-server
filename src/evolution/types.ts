@@ -1,12 +1,9 @@
 export type EvolutionProposalType =
   | 'memory_write'
   | 'memory_merge'
-  | 'prompt_patch'
+  | 'agents_patch'
   | 'skill_create'
   | 'skill_patch'
-  | 'tool_policy'
-  | 'doc_update'
-  | 'code_followup'
 
 export interface EvolutionProposal {
   id: string
@@ -30,6 +27,7 @@ export interface EvolutionProposal {
 
 export type EvolutionProposalPayload =
   | WorkspaceMemoryProposalPayload
+  | WorkspaceAgentsProposalPayload
   | WorkspaceSkillCreateProposalPayload
   | WorkspaceSkillPatchProposalPayload
   | Record<string, unknown>
@@ -49,6 +47,13 @@ export interface WorkspaceMemoryProposalEntry {
     sessionIds?: string[]
     runIds?: string[]
   }
+}
+
+export interface WorkspaceAgentsProposalPayload {
+  adapter: 'workspace_agents'
+  operation: 'append_section' | 'replace_section' | 'replace_file'
+  heading?: string
+  content: string
 }
 
 export interface WorkspaceSkillCreateProposalPayload {
@@ -82,7 +87,7 @@ export interface ProposalApplyValidation {
 
 export interface ProposalApplyResult {
   ok: boolean
-  adapter: 'workspace_memory' | 'workspace_skill'
+  adapter: 'workspace_memory' | 'workspace_agents' | 'workspace_skill'
   changedFiles: string[]
   validation: ProposalApplyValidation[]
   preview: string

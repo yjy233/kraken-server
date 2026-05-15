@@ -42,7 +42,7 @@ export interface ToolContext {
   sandboxPolicy: SessionSandboxPolicy
   availableSkills: Skill[]
   skillState: SkillRuntimeState
-  refreshSkills: () => Skill[]
+  refreshSkills: (extraDirs?: string[]) => Skill[]
   setAvailableSkills: (skills: Skill[]) => void
   memoryStore?: MemoryStore | undefined
   proposalStore?: ProposalStore | undefined
