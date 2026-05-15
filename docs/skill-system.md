@@ -42,10 +42,11 @@ The body of `SKILL.md` is the instruction payload returned by the `skill` tool w
 
 Skills are discovered in this order, with higher-priority directories overriding lower-priority ones:
 
-1. `KRAKEN_SKILLS_DIR`
-2. `./skills`
-3. `~/kraken/skills`
-4. `~/.kraken/skills`
+1. runtime workspace dirs such as `<workspace>/skills`
+2. `KRAKEN_SKILLS_DIR`
+3. built-in repo skills under `<repo>/skills`
+4. `~/.config/kraken/skills`
+5. `~/.kraken/skills`
 
 Implementation:
 
@@ -118,7 +119,7 @@ Reference path enforcement:
 
 Purpose:
 
-- install a new skill into the local registry
+- install a new skill into the current workspace registry, `<workspace>/skills`
 - inspect an already installed skill
 
 Supported actions:
@@ -149,9 +150,9 @@ Current install scope:
 
 Default install location:
 
-- `~/kraken/skills`
+- `<workspace>/skills`
 
-If `KRAKEN_SKILLS_DIR` is set, that path becomes the install target.
+`KRAKEN_SKILLS_DIR` remains a discovery source, but `skill_install` writes to the active workspace by default.
 
 If the default install directory does not exist yet, the installer creates it automatically.
 

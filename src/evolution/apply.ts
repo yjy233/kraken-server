@@ -31,7 +31,7 @@ export interface ApplyEvolutionProposalInput {
   workspaceRoot: string
   dryRun?: boolean
   appliedBy?: string
-  refreshSkills?: () => unknown
+  refreshSkills?: (extraDirs?: string[]) => unknown
 }
 
 export interface ApplyEvolutionProposalOutput {
@@ -103,7 +103,9 @@ export async function applyEvolutionProposal(input: ApplyEvolutionProposalInput)
         auditInput.appliedBy = input.appliedBy
       }
       auditPath = await writeApplyAudit(auditInput)
-      input.refreshSkills?.()
+      input.refreshSkills?.(adapterResult.adapter === 'workspace_skill'
+        ? [safeJoin(workspaceRoot, 'skills')]
+        : undefined)
     }
 
     const applyResult: ProposalApplyResult = {

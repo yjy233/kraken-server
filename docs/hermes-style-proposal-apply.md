@@ -277,12 +277,13 @@ async function applyWorkspaceMemoryProposal(input) {
 
 Kraken 当前 skill discovery 已扫描：
 
-1. `KRAKEN_SKILLS_DIR` 或 `~/kraken/skills`
-2. `./skills`
-3. `~/.config/kraken/skills`
-4. `~/.kraken/skills`
+1. runtime workspace dirs such as `<workspace>/skills`
+2. `KRAKEN_SKILLS_DIR`
+3. built-in repo skills under `<repo>/skills`
+4. `~/.config/kraken/skills`
+5. `~/.kraken/skills`
 
-为了贴近 Hermes，proposal apply 应优先修改工作目录下的 `./skills`：
+为了贴近 Hermes，proposal apply 修改工作目录下的 `skills`：
 
 ```text
 <workspace>/skills/<skill-name>/SKILL.md

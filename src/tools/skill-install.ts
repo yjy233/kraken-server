@@ -1,6 +1,5 @@
 import { initSkill, normalizeSkillName, validateSkillDir } from '../skills/authoring.js'
 import { installSkillFromClawHub, installSkillFromGitHub, linkSkillFromLocalDir } from '../skills/install.js'
-import { getAvailableSkills } from '../skills/manager.js'
 import { resolveWorkspaceSkillRoot } from '../skills/paths.js'
 import type { Tool } from './types.js'
 
@@ -140,6 +139,8 @@ export const skillInstallTool: Tool = {
 
       const result = await initSkill(initParams)
       const validation = await validateSkillDir(result.skillDir)
+      const refreshed = ctx.refreshSkills([baseDir])
+      ctx.setAvailableSkills(refreshed)
 
       return {
         output: [
@@ -147,6 +148,7 @@ export const skillInstallTool: Tool = {
           `Directory: ${result.skillDir}`,
           `Description: ${result.skill.description}`,
           `Validation: ${validation.valid ? 'passed' : 'failed'}`,
+          `Available skills: ${refreshed.map((skill) => skill.name).join(', ')}`,
           ...formatValidationMessages(validation),
         ].join('\n'),
       }
@@ -210,7 +212,7 @@ export const skillInstallTool: Tool = {
       if (!name) {
         throw new Error('name is required')
       }
-      const skill = getAvailableSkills().find((entry) => entry.name === name)
+      const skill = ctx.availableSkills.find((entry) => entry.name === name)
       if (!skill) {
         throw new Error(`Installed skill not found: ${name}`)
       }

@@ -877,32 +877,25 @@ interface Skill {
 
 这一部分是我这次再仔细看后确认的。它们不是“优化项”，而是后面做 `skill-creator` 前最好先收口的问题。
 
-### 16.1 install root 和 discovery root 现在并不完全一致
+### 16.1 install root 和 discovery root 已收口到 workspace
 
-当前代码里：
+当前实现已经调整为：
 
 - `src/skills/manager.ts`
-  - `getSkillInstallRoot()` 默认返回 `~/kraken/skills`
+  - `refreshSkills(extraDirs)` 可把当前 workspace skill dir 加入 runtime discovery
+- `src/tools/skill-install.ts`
+  - 默认安装到 `<workspace>/skills`
 - `src/skills/install.ts`
-  - `getDefaultSkillInstallRoot()` 也默认返回 `~/kraken/skills`
-- 但 `src/skills/registry.ts`
+  - 仍支持显式 `installRoot`，由工具侧传入 workspace skills dir
+- `src/skills/registry.ts`
   - discovery 目录是：
+    - runtime workspace dirs such as `<workspace>/skills`
     - `KRAKEN_SKILLS_DIR`
-    - `./skills`
+    - repo built-in `skills`
     - `~/.config/kraken/skills`
     - `~/.kraken/skills`
 
-注意这里并没有默认扫描 `~/kraken/skills`。
-
-这会导致一个结构性问题：
-
-- 如果没有设置 `KRAKEN_SKILLS_DIR`
-- `skill_install` 默认装到 `~/kraken/skills`
-- 但 `discoverSkills()` 默认不一定会扫到这个目录
-
-那么 install 和 discover 就不是同一条链。
-
-对于 `skill-creator` 来说，这个问题必须先明确，不然你做完 authoring toolkit，产出的 skill 可能安装后仍然不稳定可见。
+现在 install 和 discover 已在 workspace 层收口，`skill_install` 产出的 skill 会通过 `refreshSkills([<workspace>/skills])` 立即进入运行时 registry。
 
 ### 16.2 `KRAKEN_SKILLS_DIR` 的 `~` 展开也没有统一做
 

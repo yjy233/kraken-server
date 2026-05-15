@@ -4,6 +4,14 @@ import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type { EvolutionProposal, EvolutionProposalPayload, EvolutionProposalType, ProposalApplyResult } from './types.js'
 
+const SUPPORTED_PROPOSAL_TYPES = new Set<EvolutionProposalType>([
+  'memory_write',
+  'memory_merge',
+  'agents_patch',
+  'skill_create',
+  'skill_patch',
+])
+
 export interface ProposalStore {
   create(input: {
     type: EvolutionProposalType
@@ -51,7 +59,7 @@ export function createProposalStore(memoryDir: string): ProposalStore {
     const timestamp = new Date().toISOString()
     const proposal: EvolutionProposal = {
       id: crypto.randomUUID(),
-      type: input.type,
+      type: normalizeProposalTypeForStorage(input.type),
       title: input.title.trim(),
       rationale: input.rationale.trim(),
       sourceRunIds: input.sourceRunIds || [],
@@ -73,8 +81,7 @@ export function createProposalStore(memoryDir: string): ProposalStore {
   }
 
   async function list(status?: EvolutionProposal['status']): Promise<EvolutionProposal[]> {
-    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
-    const valid = proposals.filter(isEvolutionProposal)
+    const valid = await readProposals(proposalPath)
     return (status ? valid.filter((proposal) => proposal.status === status) : valid)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }
@@ -84,8 +91,7 @@ export function createProposalStore(memoryDir: string): ProposalStore {
     if (!normalizedId) {
       return null
     }
-    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
-    const valid = proposals.filter(isEvolutionProposal)
+    const valid = await readProposals(proposalPath)
     return valid.find((proposal) => proposal.id === normalizedId) || null
   }
 
@@ -99,8 +105,7 @@ export function createProposalStore(memoryDir: string): ProposalStore {
       throw new Error('proposal id is required')
     }
 
-    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
-    const valid = proposals.filter(isEvolutionProposal)
+    const valid = await readProposals(proposalPath)
     const existing = valid.find((proposal) => proposal.id === normalizedId)
     if (!existing) {
       throw new Error('Proposal not found')
@@ -159,8 +164,7 @@ export function createProposalStore(memoryDir: string): ProposalStore {
       throw new Error('proposal id is required')
     }
 
-    const proposals = await readJsonLines<EvolutionProposal>(proposalPath)
-    const valid = proposals.filter(isEvolutionProposal)
+    const valid = await readProposals(proposalPath)
     const existing = valid.find((proposal) => proposal.id === normalizedId)
     if (!existing) {
       throw new Error('Proposal not found')
@@ -230,6 +234,12 @@ async function readJsonLines<T>(filePath: string): Promise<T[]> {
     .filter((item): item is T => Boolean(item))
 }
 
+async function readProposals(filePath: string): Promise<EvolutionProposal[]> {
+  return (await readJsonLines<unknown>(filePath))
+    .map(normalizeStoredProposal)
+    .filter((proposal): proposal is EvolutionProposal => Boolean(proposal))
+}
+
 function isEvolutionProposal(value: unknown): value is EvolutionProposal {
   if (!value || typeof value !== 'object') {
     return false
@@ -240,6 +250,49 @@ function isEvolutionProposal(value: unknown): value is EvolutionProposal {
     typeof proposal.title === 'string' &&
     typeof proposal.suggestedChange === 'string' &&
     typeof proposal.status === 'string'
+}
+
+function normalizeStoredProposal(value: unknown): EvolutionProposal | null {
+  if (!isEvolutionProposal(value)) {
+    return null
+  }
+  const rawType = String((value as { type?: unknown }).type || '')
+  const normalizedType = normalizeLegacyProposalType(rawType)
+  if (!normalizedType) {
+    return null
+  }
+  return {
+    ...value,
+    type: normalizedType,
+    risk: normalizeRisk(value.risk),
+    status: normalizeStatus(value.status),
+  }
+}
+
+function normalizeProposalTypeForStorage(type: EvolutionProposalType): EvolutionProposalType {
+  if (SUPPORTED_PROPOSAL_TYPES.has(type)) {
+    return type
+  }
+  const normalized = normalizeLegacyProposalType(String(type))
+  if (!normalized) {
+    throw new Error(`Unsupported proposal type: ${String(type)}`)
+  }
+  return normalized
+}
+
+function normalizeLegacyProposalType(type: string): EvolutionProposalType | null {
+  if (SUPPORTED_PROPOSAL_TYPES.has(type as EvolutionProposalType)) {
+    return type as EvolutionProposalType
+  }
+  return null
+}
+
+function normalizeRisk(value: unknown): EvolutionProposal['risk'] {
+  return value === 'low' || value === 'high' ? value : 'medium'
+}
+
+function normalizeStatus(value: unknown): EvolutionProposal['status'] {
+  return value === 'accepted' || value === 'rejected' || value === 'applied' ? value : 'pending'
 }
 
 function normalizeReviewNote(value: unknown): string {
