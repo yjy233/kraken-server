@@ -47,4 +47,5 @@ pnpm-debug.log*
 package-lock.json
 
 .feishu-sessions/**
-.memory
+.memory/
+memory/

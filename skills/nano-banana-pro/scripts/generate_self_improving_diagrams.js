@@ -101,7 +101,7 @@ const DIAGRAMS = [
       'White background, readable English labels, technical document style.',
       'Main states: pending, accepted, rejected, applied.',
       'Flow: Agent or Curator creates proposal, Risk Classifier, Human Review, Accept or Reject, Apply Service, Validation, Audit Log.',
-      'Show proposal types and risk levels in a compact side panel: memory_write low, memory_merge low, prompt_patch high, skill_patch high, tool_policy high, code_followup high.',
+      'Show proposal types and risk levels in a compact side panel: memory_write low, memory_merge low, agents_patch medium, skill_create medium, skill_patch high.',
       'Emphasize: accepted does not mean applied; validation failure keeps proposal unapplied.',
       'No decorative gradients, no logos, no watermark, avoid tiny text.',
     ].join(' '),
@@ -139,10 +139,7 @@ function getProxy(args) {
     return String(args.proxy).trim()
   }
   return firstNonEmpty(
-    process.env.OPENROUTER_PROXY,
     process.env.NANO_BANANA_PROXY,
-    process.env.HTTPS_PROXY,
-    process.env.HTTP_PROXY,
     'http://127.0.0.1:7897',
   )
 }
@@ -333,7 +330,7 @@ function printUsage() {
 
 Environment:
   OPENROUTER_API_KEY or OPENROUTER_KEY
-  OPENROUTER_PROXY, NANO_BANANA_PROXY, HTTPS_PROXY, or HTTP_PROXY
+  NANO_BANANA_PROXY
 `)
 }
 
