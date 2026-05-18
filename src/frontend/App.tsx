@@ -15,6 +15,7 @@ import { useScheduledJobs } from './hooks/useScheduledJobs.js'
 import { useModelUsage } from './hooks/useModelUsage.js'
 import { useEvolutionProposals } from './hooks/useEvolutionProposals.js'
 import type { SessionSandboxConfig } from './types.js'
+import { transformComposerMessage } from './utils/slash-commands.js'
 
 export default function App() {
   const { config, error: configError } = useConfig()
@@ -111,7 +112,8 @@ export default function App() {
 
   const handleSend = useCallback(
     (message: string, images: ImageBlock[]) => {
-      chat.send(message, systemPrompt, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput), images)
+      const transformedMessage = transformComposerMessage(message)
+      chat.send(transformedMessage, systemPrompt, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput), images)
     },
     [chat, systemPrompt, effectiveWorkspaceRoot, readRootsInput]
   )
@@ -262,76 +264,12 @@ export default function App() {
               </div>
             )}
           </div>
-          {activeTab === 'chat' ? (
-            <div className="header-meta">
-              <span className="session-count">
-                {sessions.activeSession
-                  ? `${sessions.activeSession.messages.length} messages`
-                  : 'No session'}
-              </span>
-              <span className="model-pill">{config?.model || 'Model'}</span>
-              <ContextWindowMeter contextWindow={sessions.activeSession?.contextWindow} compact />
-              <button className="ghost-button" type="button" onClick={handleNewChat}>
-                New chat
-              </button>
-            </div>
-          ) : activeTab === 'files' ? (
-            <div className="header-meta">
-              <span className="session-count">
-                {sessions.activeSession?.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || 'Workspace'}
-              </span>
-              <span className="model-pill">Browse and edit</span>
-            </div>
-          ) : activeTab === 'scheduled' ? (
-            <div className="header-meta">
-              <span className="session-count">
-                {scheduled.status
-                  ? `${scheduled.status.jobCount} jobs`
-                  : `${scheduled.jobs.length} jobs`}
-              </span>
-              <span className="model-pill">
-                {config?.schedulerEnabled ? 'Scheduler on' : 'Scheduler off'}
-              </span>
-              <button className="ghost-button" type="button" onClick={() => void scheduled.refresh()}>
-                Refresh jobs
-              </button>
-            </div>
-          ) : activeTab === 'usage' ? (
-            <div className="header-meta">
-              <span className="session-count">
-                {modelUsage.summary
-                  ? `${modelUsage.summary.totals.requestCount} requests`
-                  : 'Usage loading'}
-              </span>
-              <span className="model-pill">
-                {modelUsage.summary
-                  ? `${modelUsage.summary.modelCount} models`
-                  : 'Model logs'}
-              </span>
-              <button className="ghost-button" type="button" onClick={() => void modelUsage.refresh()}>
-                Refresh usage
-              </button>
-            </div>
-          ) : (
-            <div className="header-meta">
-              <span className="session-count">
-                {evolution.counts.pending} pending
-              </span>
-              <span className="model-pill">
-                {evolution.counts.all} total
-              </span>
-              <button className="ghost-button" type="button" onClick={() => void evolution.refresh()}>
-                Refresh proposals
-              </button>
-            </div>
+          {activeTab === 'chat' && sessions.activeSession?.contextWindow && (
+            <ContextWindowMeter contextWindow={sessions.activeSession.contextWindow} />
           )}
         </header>
 
-        {displayError && (
-          <div className="error-banner">
-            {displayError}
-          </div>
-        )}
+        {displayError && <div className="error-banner">{displayError}</div>}
 
         {activeTab === 'chat' ? (
           <>
@@ -340,13 +278,17 @@ export default function App() {
               runtimeEvents={chat.runtimeEvents}
               sending={chat.sending}
             />
-
-            <Composer sending={chat.sending} onSend={handleSend} onCancel={chat.cancel} />
+            <Composer
+              sending={chat.sending}
+              skills={config?.skills || []}
+              onSend={handleSend}
+              onCancel={chat.cancel}
+            />
           </>
         ) : activeTab === 'files' ? (
           <WorkspacePanel
             session={sessions.activeSession}
-            fallbackWorkspaceRoot={config?.defaultWorkspaceRoot || ''}
+            fallbackWorkspaceRoot={effectiveWorkspaceRoot}
           />
         ) : activeTab === 'scheduled' ? (
           <ScheduledJobsPanel
@@ -354,8 +296,8 @@ export default function App() {
             status={scheduled.status}
             sessions={sessions.sessions}
             activeSessionId={sessions.activeSession?.id || null}
-            schedulerEnabled={Boolean(config?.schedulerEnabled)}
-            schedulerPollIntervalMs={config?.schedulerPollIntervalMs || 300000}
+            schedulerEnabled={config?.schedulerEnabled ?? false}
+            schedulerPollIntervalMs={config?.schedulerPollIntervalMs ?? 0}
             loading={scheduled.loading}
             error={scheduled.error}
             executionsByJob={scheduled.executionsByJob}
@@ -369,8 +311,8 @@ export default function App() {
           />
         ) : activeTab === 'usage' ? (
           <ModelUsagePanel
-            summary={modelUsage.summary}
             loading={modelUsage.loading}
+            summary={modelUsage.summary}
             error={modelUsage.error}
             onRefresh={modelUsage.refresh}
           />
@@ -397,22 +339,18 @@ export default function App() {
 }
 
 function buildSandboxConfig(workspaceRoot: string, readRootsInput: string): SessionSandboxConfig | undefined {
-  const normalizedWorkspaceRoot = workspaceRoot.trim()
+  const trimmedWorkspaceRoot = workspaceRoot.trim()
   const readRoots = readRootsInput
-    .split(/[\n,]/)
-    .map((line) => line.trim())
+    .split(',')
+    .map((item) => item.trim())
     .filter(Boolean)
 
-  if (!normalizedWorkspaceRoot && readRoots.length === 0) {
+  if (!trimmedWorkspaceRoot && readRoots.length === 0) {
     return undefined
   }
 
-  const sandbox: SessionSandboxConfig = {}
-  if (normalizedWorkspaceRoot) {
-    sandbox.workspaceRoot = normalizedWorkspaceRoot
+  return {
+    ...(trimmedWorkspaceRoot ? { workspaceRoot: trimmedWorkspaceRoot } : {}),
+    ...(readRoots.length > 0 ? { readRoots } : {}),
   }
-  if (readRoots.length > 0) {
-    sandbox.readRoots = readRoots
-  }
-  return sandbox
 }

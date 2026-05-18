@@ -1,5 +1,12 @@
-import React, { useRef, useState, useCallback } from 'react'
-import type { ImageBlock } from '../types.js'
+import React, { useRef, useState, useCallback, useEffect } from 'react'
+import type { ImageBlock, SkillInfo } from '../types.js'
+import {
+  applySlashSelection,
+  getSlashContext,
+  getSlashOptions,
+  type SlashCommandOption,
+  type SlashContext,
+} from '../utils/slash-commands.js'
 
 export interface ComposerImageAttachment {
   id: string
@@ -8,6 +15,7 @@ export interface ComposerImageAttachment {
 
 interface ComposerProps {
   sending: boolean
+  skills: SkillInfo[]
   onSend: (message: string, images: ImageBlock[]) => void
   onCancel: () => void
 }
@@ -15,13 +23,27 @@ interface ComposerProps {
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
-export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel }) => {
+export const Composer: React.FC<ComposerProps> = ({ sending, skills, onSend, onCancel }) => {
   const [text, setText] = useState('')
   const [images, setImages] = useState<ComposerImageAttachment[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [slashContext, setSlashContext] = useState<SlashContext>(() => getSlashContext('', 0))
+  const [slashOptions, setSlashOptions] = useState<SlashCommandOption[]>([])
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const [isComposing, setIsComposing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const canSend = (text.trim().length > 0 || images.length > 0) && !sending
+  const slashOpen = slashContext.active && slashOptions.length > 0
+
+  const updateSlashState = useCallback((nextText: string, cursor: number) => {
+    const context = getSlashContext(nextText, cursor)
+    const options = getSlashOptions(context, skills)
+    setSlashContext(context)
+    setSlashOptions(options)
+    setHighlightedIndex(0)
+  }, [skills])
 
   const submit = useCallback(() => {
     if (!canSend) return
@@ -29,21 +51,68 @@ export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel })
     setText('')
     setImages([])
     setError(null)
+    setSlashContext(getSlashContext('', 0))
+    setSlashOptions([])
+    setHighlightedIndex(0)
   }, [canSend, images, onSend, text])
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     submit()
   }, [submit])
 
+  const handleSlashSelection = useCallback((option: SlashCommandOption) => {
+    const next = applySlashSelection(text, slashContext, option)
+    setText(next.text)
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(next.cursor, next.cursor)
+      }
+      updateSlashState(next.text, next.cursor)
+    })
+  }, [slashContext, text, updateSlashState])
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (isComposing) {
+        return
+      }
+
+      if (slashOpen) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          setHighlightedIndex((prev) => (prev + 1) % slashOptions.length)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          setHighlightedIndex((prev) => (prev - 1 + slashOptions.length) % slashOptions.length)
+          return
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault()
+          const option = slashOptions[highlightedIndex]
+          if (option) {
+            handleSlashSelection(option)
+          }
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setSlashContext(getSlashContext('', 0))
+          setSlashOptions([])
+          setHighlightedIndex(0)
+          return
+        }
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
         submit()
       }
     },
-    [submit]
+    [handleSlashSelection, highlightedIndex, isComposing, slashOpen, slashOptions, submit]
   )
 
   const handleAttachClick = useCallback(() => {
@@ -105,6 +174,14 @@ export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel })
     }
   }, [handleFilesSelected])
 
+  useEffect(() => {
+    if (!slashOpen) {
+      setHighlightedIndex(0)
+      return
+    }
+    setHighlightedIndex((prev) => Math.min(prev, slashOptions.length - 1))
+  }, [slashOpen, slashOptions.length])
+
   return (
     <form className="composer" autoComplete="off" onSubmit={handleSubmit}>
       <div className="composer-inner">
@@ -139,16 +216,48 @@ export const Composer: React.FC<ComposerProps> = ({ sending, onSend, onCancel })
             </div>
           )}
           <textarea
+            ref={textareaRef}
             id="message-input"
             className="message-input"
             rows={3}
             placeholder="Ask the agent to inspect code, generate text, or help with a task..."
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              const nextText = e.target.value
+              const cursor = e.target.selectionStart ?? nextText.length
+              setText(nextText)
+              updateSlashState(nextText, cursor)
+            }}
+            onClick={(e) => updateSlashState(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+            onKeyUp={(e) => updateSlashState(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onCompositionStart={() => setIsComposing(true)}
+            onCompositionEnd={(e) => {
+              setIsComposing(false)
+              updateSlashState(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)
+            }}
             disabled={sending}
           />
+          {slashOpen && (
+            <div className="slash-menu" role="listbox" aria-label={slashContext.stage === 'root' ? 'Slash commands' : 'Available skills'}>
+              {slashOptions.map((option, index) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="slash-option"
+                  data-active={index === highlightedIndex}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSlashSelection(option)}
+                >
+                  <div className="slash-option-header">
+                    <span className="slash-option-label">{option.type === 'command' ? `/${option.label}` : option.label}</span>
+                  </div>
+                  {option.description && <span className="slash-option-description">{option.description}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           {error && <div className="composer-error">{error}</div>}
         </div>
         <div className="composer-right">
