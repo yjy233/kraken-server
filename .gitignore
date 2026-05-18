@@ -49,3 +49,4 @@ package-lock.json
 .feishu-sessions/**
 .memory/
 memory/
+.kraken-coder/
