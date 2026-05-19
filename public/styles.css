@@ -397,12 +397,276 @@ body {
 
 .message-list {
   overflow-y: auto;
-  padding: 24px;
+  padding: 28px 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
+.hero-empty {
+  flex: 1;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.hero-empty h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.hero-empty p {
+  margin: 0;
+  max-width: 460px;
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.message-row[data-role="user"] {
+  justify-content: flex-end;
+}
+
+.agent-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  box-shadow: var(--shadow);
+}
+
+.message-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(80%, 820px);
+  min-width: 0;
+}
+
+.message-stack[data-role="user"] {
+  align-items: flex-end;
+}
+
+.message-stack[data-role="assistant"] {
+  align-items: flex-start;
+}
+
+.message-timestamp {
+  padding: 0 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.message {
+  width: fit-content;
+  max-width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.message[data-role="user"] {
+  border-top-right-radius: 6px;
+  background: var(--user-bubble);
+  color: var(--user-text);
+}
+
+.message[data-role="assistant"] {
+  border-top-left-radius: 6px;
+  background: var(--surface);
+  color: var(--assistant-text);
+}
+
+.message-block-flow,
+.runtime-reply-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message-body {
+  color: inherit;
+  line-height: 1.55;
+}
+
+.message-body p:first-child {
+  margin-top: 0;
+}
+
+.message-body p:last-child {
+  margin-bottom: 0;
+}
+
+.message-body pre {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #101214;
+  color: #f4f7fb;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.message-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.message-body a {
+  color: inherit;
+}
+
+.message-body ul,
+.message-body ol {
+  padding-left: 20px;
+}
+
+.message-body img,
+.tool-markdown-body img,
+.workspace-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.message-image-block {
+  margin: 0;
+}
+
+.message-image-block img {
+  display: block;
+  max-width: min(100%, 420px);
+  max-height: 360px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.message-image-block figcaption {
+  margin-top: 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tool-detail-item,
+.tool-call-item {
+  overflow: hidden;
+  border: 1px solid var(--trace-border);
+  border-radius: var(--radius-sm);
+  background: var(--trace-bg);
+}
+
+.tool-detail-item[data-status="error"] {
+  border-color: rgba(255, 59, 48, 0.18);
+  background: var(--danger-bg);
+}
+
+.tool-detail-header,
+.tool-call-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-call-name {
+  font-weight: 700;
+}
+
+.tool-call-input {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.tool-call-status {
+  margin-left: auto;
+}
+
+.tool-call-arrow {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.tool-detail-label {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--brand-light);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tool-detail-item[data-status="error"] .tool-detail-label {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.tool-call-expanded {
+  padding: 0 10px 10px;
+}
+
+.tool-call-section-label {
+  margin: 8px 0 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tool-call-detail {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0f1720;
+  color: #f6f7fb;
+  overflow-x: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.tool-call-detail-full {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.tool-markdown-body {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.runtime-reply-text:empty {
+  display: none;
+}
+
+/* Legacy bubble classes kept for older markup and responsive rules. */
 .message-group {
   display: flex;
   gap: 12px;
