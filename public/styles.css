@@ -393,6 +393,30 @@ body {
   min-height: 40px;
 }
 
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.model-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--assistant-bubble);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.session-count {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
 /* ─── Message List ────────────────────────────────── */
 
 .message-list {

@@ -264,8 +264,68 @@ export default function App() {
               </div>
             )}
           </div>
-          {activeTab === 'chat' && sessions.activeSession?.contextWindow && (
-            <ContextWindowMeter contextWindow={sessions.activeSession.contextWindow} />
+          {activeTab === 'chat' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {sessions.activeSession
+                  ? `${sessions.activeSession.messages.length} messages`
+                  : 'No session'}
+              </span>
+              <span className="model-pill">{config?.model || 'Model'}</span>
+              <ContextWindowMeter contextWindow={sessions.activeSession?.contextWindow} compact />
+              <button className="ghost-button" type="button" onClick={handleNewChat}>
+                New chat
+              </button>
+            </div>
+          ) : activeTab === 'files' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {sessions.activeSession?.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || 'Workspace'}
+              </span>
+              <span className="model-pill">Browse and edit</span>
+            </div>
+          ) : activeTab === 'scheduled' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {scheduled.status
+                  ? `${scheduled.status.jobCount} jobs`
+                  : `${scheduled.jobs.length} jobs`}
+              </span>
+              <span className="model-pill">
+                {config?.schedulerEnabled ? 'Scheduler on' : 'Scheduler off'}
+              </span>
+              <button className="ghost-button" type="button" onClick={() => void scheduled.refresh()}>
+                Refresh jobs
+              </button>
+            </div>
+          ) : activeTab === 'usage' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {modelUsage.summary
+                  ? `${modelUsage.summary.totals.requestCount} requests`
+                  : 'Usage loading'}
+              </span>
+              <span className="model-pill">
+                {modelUsage.summary
+                  ? `${modelUsage.summary.modelCount} models`
+                  : 'Model logs'}
+              </span>
+              <button className="ghost-button" type="button" onClick={() => void modelUsage.refresh()}>
+                Refresh usage
+              </button>
+            </div>
+          ) : (
+            <div className="header-meta">
+              <span className="session-count">
+                {evolution.counts.pending} pending
+              </span>
+              <span className="model-pill">
+                {evolution.counts.all} total
+              </span>
+              <button className="ghost-button" type="button" onClick={() => void evolution.refresh()}>
+                Refresh proposals
+              </button>
+            </div>
           )}
         </header>
 

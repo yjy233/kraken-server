@@ -85,7 +85,10 @@ export class PromptBuilder {
   /** Markdown 图片输出约定（所有输出通用） */
   private buildMarkdownMediaGuidelines(): string {
     return [
-      '## Markdown Media Guidelines',
+      '## Markdown Formatting Guidelines',
+      '- Ensure Markdown emphasis renders reliably in CommonMark/GFM parsers.',
+      '- In Chinese or mixed-language prose, avoid starting bold or italic markup immediately after CJK text when the first emphasized character is punctuation, a quote, or a bracket. For example, avoid `向**"AI"转型**`; use `向 **"AI"转型**` or `向"**AI**"转型` instead.',
+      '- When bold or italic text includes leading or trailing quotes/brackets/punctuation, either put spaces around the whole emphasized phrase or keep the punctuation outside the emphasis markers.',
       '- When an image is useful in an answer or tool-derived summary, embed it with standard Markdown image syntax: `![alt text](path-or-url)`.',
       '- For local images created or discovered with tools, use the exact readable file path returned by the tool.',
       '- Do not invent local image paths, and do not inline base64 image data in normal responses.',
