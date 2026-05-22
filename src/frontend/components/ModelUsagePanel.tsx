@@ -86,30 +86,30 @@ export const ModelUsagePanel: React.FC<ModelUsagePanelProps> = ({
               </div>
             ) : (
               <div className="model-usage-table-wrap">
-                <table className="model-usage-table">
-                  <thead>
-                    <tr>
-                      <th>Model</th>
-                      <th>Requests</th>
-                      <th>Responses</th>
-                      <th>Errors</th>
-                      <th>Input</th>
-                      <th>Cache Hit</th>
-                      <th>Cache Write</th>
-                      <th>Output</th>
-                      <th>Reasoning</th>
-                      <th>Total</th>
-                      <th>Cost</th>
-                      <th>Avg Time</th>
-                      <th>Last Seen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <div className="model-usage-table" role="table" aria-label="Model usage by model">
+                  <div className="model-usage-table-head" role="rowgroup">
+                    <div className="model-usage-table-row" role="row">
+                      <div role="columnheader">Model</div>
+                      <div role="columnheader">Requests</div>
+                      <div role="columnheader">Responses</div>
+                      <div role="columnheader">Errors</div>
+                      <div role="columnheader">Input</div>
+                      <div role="columnheader">Cache Hit</div>
+                      <div role="columnheader">Cache Write</div>
+                      <div role="columnheader">Output</div>
+                      <div role="columnheader">Reasoning</div>
+                      <div role="columnheader">Total</div>
+                      <div role="columnheader">Cost</div>
+                      <div role="columnheader">Avg Time</div>
+                      <div role="columnheader">Last Seen</div>
+                    </div>
+                  </div>
+                  <div className="model-usage-table-body" role="rowgroup">
                     {summary.models.map((model) => (
                       <ModelUsageRow key={model.model} model={model} />
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
               </div>
             )}
           </section>
@@ -169,28 +169,28 @@ const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) =>
 )
 
 const ModelUsageRow: React.FC<{ model: ModelUsageModelStats }> = ({ model }) => (
-  <tr>
-    <td>
+  <div className="model-usage-table-row" role="row">
+    <div role="cell">
       <div className="model-usage-model-cell">
         <strong>{model.model}</strong>
         {model.providerModels.length > 0 && (
           <span>{model.providerModels.join(', ')}</span>
         )}
       </div>
-    </td>
-    <td>{formatInteger(model.requestCount)}</td>
-    <td>{formatInteger(model.responseCount)}</td>
-    <td>{formatInteger(model.errorCount)}</td>
-    <td>{formatInteger(model.inputTokens)}</td>
-    <td>{formatInteger(model.cachedTokens)}</td>
-    <td>{formatInteger(model.cacheWriteTokens)}</td>
-    <td>{formatInteger(model.outputTokens)}</td>
-    <td>{formatInteger(model.reasoningTokens)}</td>
-    <td>{formatInteger(model.totalTokens)}</td>
-    <td>{formatCost(model.cost)}</td>
-    <td>{formatDuration(model.averageDurationMs)}</td>
-    <td>{formatDateTime(model.lastSeenAt)}</td>
-  </tr>
+    </div>
+    <div role="cell">{formatInteger(model.requestCount)}</div>
+    <div role="cell">{formatInteger(model.responseCount)}</div>
+    <div role="cell">{formatInteger(model.errorCount)}</div>
+    <div role="cell">{formatInteger(model.inputTokens)}</div>
+    <div role="cell">{formatInteger(model.cachedTokens)}</div>
+    <div role="cell">{formatInteger(model.cacheWriteTokens)}</div>
+    <div role="cell">{formatInteger(model.outputTokens)}</div>
+    <div role="cell">{formatInteger(model.reasoningTokens)}</div>
+    <div role="cell">{formatInteger(model.totalTokens)}</div>
+    <div role="cell">{formatCost(model.cost)}</div>
+    <div role="cell">{formatDuration(model.averageDurationMs)}</div>
+    <div role="cell">{formatCompactDateTime(model.lastSeenAt)}</div>
+  </div>
 )
 
 function formatInteger(value: number): string {
@@ -237,6 +237,22 @@ function formatDateTime(value: string | null): string {
     return value
   }
   return date.toLocaleString()
+}
+
+function formatCompactDateTime(value: string | null): string {
+  if (!value) {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function formatBytes(value: number): string {
