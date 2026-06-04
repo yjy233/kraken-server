@@ -952,6 +952,115 @@ body {
   white-space: nowrap;
 }
 
+/* ─── JSON Beauty ─────────────────────────────────── */
+
+.json-beauty-panel {
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+}
+
+.json-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.json-indent-control,
+.json-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.json-toolbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.json-toolbar-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.json-indent-button {
+  margin: 0;
+  padding: 6px 10px;
+}
+
+.json-editor-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.json-editor-pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.json-editor-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.json-textarea {
+  flex: 1;
+  min-height: 360px;
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.json-textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1), var(--shadow);
+}
+
+.json-output {
+  background: #fbfbfd;
+}
+
+.json-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 59, 48, 0.18);
+  border-radius: 10px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 /* ─── Scheduled Jobs ──────────────────────────────── */
 
 .scheduled-panel {
@@ -2610,7 +2719,8 @@ body {
     flex-direction: column;
   }
 
-  .workspace-panel {
+  .workspace-panel,
+  .json-editor-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -2662,7 +2772,8 @@ body {
 
   .scheduled-panel,
   .model-usage-panel,
-  .proposal-panel {
+  .proposal-panel,
+  .json-beauty-panel {
     padding: 16px;
   }
 
@@ -2690,7 +2801,8 @@ body {
   .model-usage-summary-grid,
   .model-usage-fields-row,
   .proposal-summary-grid,
-  .proposal-meta-grid {
+  .proposal-meta-grid,
+  .json-editor-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2702,7 +2814,8 @@ body {
   .model-usage-card-header,
   .proposal-toolbar,
   .proposal-list-header,
-  .proposal-card-main {
+  .proposal-card-main,
+  .json-toolbar {
     flex-direction: column;
     align-items: stretch;
   }

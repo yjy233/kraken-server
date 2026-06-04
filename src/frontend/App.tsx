@@ -7,6 +7,7 @@ import { ScheduledJobsPanel } from './components/ScheduledJobsPanel.js'
 import { WorkspacePanel } from './components/WorkspacePanel.js'
 import { ModelUsagePanel } from './components/ModelUsagePanel.js'
 import { ProposalReviewPanel } from './components/ProposalReviewPanel.js'
+import { JsonBeautyPanel } from './components/JsonBeautyPanel.js'
 import { ContextWindowMeter } from './components/ContextWindowMeter.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
@@ -20,7 +21,7 @@ import { transformComposerMessage } from './utils/slash-commands.js'
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
-  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage' | 'evolution'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage' | 'evolution' | 'json'>('chat')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
@@ -192,6 +193,14 @@ export default function App() {
               >
                 Evolution
               </button>
+              <button
+                className="panel-tab"
+                type="button"
+                data-active={activeTab === 'json'}
+                onClick={() => setActiveTab('json')}
+              >
+                JSON
+              </button>
             </div>
 
             {activeTab === 'chat' ? (
@@ -255,11 +264,18 @@ export default function App() {
                   Track model requests, token totals, cache hits, usage fields, and cost by model.
                 </p>
               </div>
-            ) : (
+            ) : activeTab === 'evolution' ? (
               <div className="scheduled-header-copy">
                 <h2>Evolution Proposals</h2>
                 <p>
                   Review self-improvement proposals before they change long-term behavior.
+                </p>
+              </div>
+            ) : (
+              <div className="scheduled-header-copy">
+                <h2>JSON Beauty</h2>
+                <p>
+                  Paste a JSON string and expand it into readable formatted text.
                 </p>
               </div>
             )}
@@ -314,7 +330,7 @@ export default function App() {
                 Refresh usage
               </button>
             </div>
-          ) : (
+          ) : activeTab === 'evolution' ? (
             <div className="header-meta">
               <span className="session-count">
                 {evolution.counts.pending} pending
@@ -325,6 +341,11 @@ export default function App() {
               <button className="ghost-button" type="button" onClick={() => void evolution.refresh()}>
                 Refresh proposals
               </button>
+            </div>
+          ) : (
+            <div className="header-meta">
+              <span className="session-count">Local tool</span>
+              <span className="model-pill">JSON.parse</span>
             </div>
           )}
         </header>
@@ -376,7 +397,7 @@ export default function App() {
             error={modelUsage.error}
             onRefresh={modelUsage.refresh}
           />
-        ) : (
+        ) : activeTab === 'evolution' ? (
           <ProposalReviewPanel
             proposals={evolution.proposals}
             filter={evolution.filter}
@@ -392,6 +413,8 @@ export default function App() {
             onDryRunApply={evolution.dryRunApply}
             onApply={evolution.apply}
           />
+        ) : (
+          <JsonBeautyPanel />
         )}
       </main>
     </div>
