@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f5f5f7;
   --surface: #ffffff;
   --surface-hover: #f0f0f2;
@@ -7,6 +8,7 @@
   --text-secondary: #6e6e73;
   --text-tertiary: #86868b;
   --brand: #0071e3;
+  --brand-hover: #005bb5;
   --brand-light: #e8f4fd;
   --user-bubble: #0071e3;
   --user-text: #ffffff;
@@ -14,13 +16,64 @@
   --assistant-text: #1d1d1f;
   --danger: #ff3b30;
   --danger-bg: #fff0ef;
+  --danger-hover: #d92d24;
   --success: #34c759;
+  --success-bg: rgba(52, 199, 89, 0.16);
+  --success-text: #127034;
+  --success-hover: #248a3d;
+  --warning-bg: #fff7e8;
+  --warning-text: #9a6700;
   --trace-bg: #fafafa;
   --trace-border: #e8e8ed;
+  --code-bg: #101214;
+  --code-text: #f4f7fb;
+  --tab-hover-bg: rgba(255, 255, 255, 0.6);
+  --active-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --focus-ring: rgba(0, 113, 227, 0.1);
+  --filter-count-bg: rgba(0, 0, 0, 0.06);
+  --context-track: #e7ecf2;
+  --overlay: rgba(0, 0, 0, 0.68);
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.05);
   --radius: 16px;
   --radius-sm: 12px;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #171a20;
+  --surface-hover: #222733;
+  --border: #2b313d;
+  --text: #f2f5f8;
+  --text-secondary: #b2bcc9;
+  --text-tertiary: #7f8998;
+  --brand: #58a6ff;
+  --brand-hover: #2f81f7;
+  --brand-light: rgba(88, 166, 255, 0.15);
+  --user-bubble: #2563eb;
+  --assistant-bubble: #252b36;
+  --assistant-text: #e8edf4;
+  --danger: #ff6b63;
+  --danger-bg: rgba(255, 107, 99, 0.14);
+  --danger-hover: #dc5149;
+  --success: #4ade80;
+  --success-bg: rgba(74, 222, 128, 0.15);
+  --success-text: #7ee6a3;
+  --success-hover: #2fbf68;
+  --warning-bg: rgba(251, 191, 36, 0.14);
+  --warning-text: #ffd166;
+  --trace-bg: #12161d;
+  --trace-border: #2f3744;
+  --code-bg: #0a0d11;
+  --code-text: #eef4fb;
+  --tab-hover-bg: var(--surface-hover);
+  --active-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+  --focus-ring: rgba(88, 166, 255, 0.18);
+  --filter-count-bg: rgba(255, 255, 255, 0.08);
+  --context-track: var(--assistant-bubble);
+  --overlay: rgba(0, 0, 0, 0.72);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -40,6 +93,15 @@ body {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--brand-light);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
 /* ─── Layout ─────────────────────────────────────── */
@@ -258,7 +320,7 @@ body {
 }
 
 .send-button:hover {
-  background: #005bb5;
+  background: var(--brand-hover);
 }
 
 .ghost-button {
@@ -269,7 +331,7 @@ body {
 }
 
 .ghost-button:hover {
-  background: #005bb5;
+  background: var(--brand-hover);
 }
 
 .ghost-button:disabled {
@@ -327,13 +389,13 @@ body {
 
 .panel-tab:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--tab-hover-bg);
 }
 
 .panel-tab[data-active="true"] {
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--active-shadow);
 }
 
 .scheduled-header-copy h2 {
@@ -386,7 +448,7 @@ body {
 
 .sandbox-input:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .sandbox-save-button {
@@ -409,6 +471,43 @@ body {
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+
+.theme-switch-option {
+  min-width: 46px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 10px;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.theme-switch-option:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.theme-switch-option[data-active="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--active-shadow);
 }
 
 .session-count {
@@ -540,8 +639,8 @@ body {
   margin: 12px 0;
   padding: 12px;
   border-radius: 12px;
-  background: #101214;
-  color: #f4f7fb;
+  background: var(--code-bg);
+  color: var(--code-text);
   overflow-x: auto;
   font-size: 13px;
 }
@@ -668,8 +767,8 @@ body {
   margin: 0;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #0f1720;
-  color: #f6f7fb;
+  background: var(--code-bg);
+  color: var(--code-text);
   overflow-x: auto;
   font-size: 11px;
   line-height: 1.5;
@@ -764,8 +863,8 @@ body {
   margin: 12px 0;
   padding: 12px;
   border-radius: 12px;
-  background: #101214;
-  color: #f4f7fb;
+  background: var(--code-bg);
+  color: var(--code-text);
   overflow-x: auto;
   font-size: 13px;
 }
@@ -870,8 +969,8 @@ body {
   margin: 8px 0 0;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #0f1720;
-  color: #f6f7fb;
+  background: var(--code-bg);
+  color: var(--code-text);
   overflow-x: auto;
   font-size: 11px;
 }
@@ -935,7 +1034,7 @@ body {
 .skill-badge.loaded {
   background: var(--brand-light);
   color: var(--brand);
-  border-color: rgba(0, 113, 227, 0.16);
+  border-color: var(--brand-light);
 }
 
 .skill-dot {
@@ -1043,11 +1142,11 @@ body {
 
 .json-textarea:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1), var(--shadow);
+  box-shadow: 0 0 0 3px var(--focus-ring), var(--shadow);
 }
 
 .json-output {
-  background: #fbfbfd;
+  background: var(--bg);
 }
 
 .json-error {
@@ -1365,7 +1464,7 @@ body {
 
 .workspace-editor:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .workspace-secondary-button {
@@ -1384,7 +1483,7 @@ body {
 }
 
 .workspace-danger-button:hover {
-  background: #d92d24;
+  background: var(--danger-hover);
 }
 
 .workspace-danger-button:disabled {
@@ -1553,7 +1652,7 @@ body {
 .scheduled-select:focus,
 .scheduled-textarea:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .scheduled-toggle {
@@ -1599,8 +1698,8 @@ body {
 }
 
 .scheduled-note-warning {
-  background: #fff7e8;
-  color: #9a6700;
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .scheduled-inline-error {
@@ -1710,8 +1809,8 @@ body {
 }
 
 .status-chip[data-enabled="true"] {
-  background: rgba(52, 199, 89, 0.16);
-  color: #127034;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .scheduled-job-message {
@@ -2086,11 +2185,11 @@ body {
 }
 
 .proposal-metric[data-tone="warn"] strong {
-  color: #b45309;
+  color: var(--warning-text);
 }
 
 .proposal-metric[data-tone="good"] strong {
-  color: #127034;
+  color: var(--success-text);
 }
 
 .proposal-filter-row {
@@ -2115,7 +2214,7 @@ body {
 }
 
 .proposal-filter[data-active="true"] {
-  border-color: rgba(0, 113, 227, 0.34);
+  border-color: var(--brand-light);
   background: var(--brand-light);
   color: var(--brand);
 }
@@ -2124,7 +2223,7 @@ body {
   min-width: 22px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--filter-count-bg);
   color: inherit;
   font-size: 12px;
   text-align: center;
@@ -2216,13 +2315,13 @@ body {
 }
 
 .proposal-risk[data-risk="medium"] {
-  background: #fff7e8;
-  color: #9a6700;
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .proposal-risk[data-risk="low"] {
-  background: rgba(52, 199, 89, 0.16);
-  color: #127034;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .proposal-status {
@@ -2238,8 +2337,8 @@ body {
 
 .proposal-status[data-status="accepted"],
 .proposal-status[data-status="applied"] {
-  background: rgba(52, 199, 89, 0.16);
-  color: #127034;
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .proposal-heading h4 {
@@ -2362,7 +2461,7 @@ body {
 }
 
 .proposal-accept-button:hover {
-  background: #248a3d;
+  background: var(--success-hover);
 }
 
 .proposal-readonly-note {
@@ -2450,11 +2549,11 @@ body {
 }
 
 .proposal-validation-list div[data-ok="true"] {
-  border-color: rgba(52, 199, 89, 0.34);
+  border-color: var(--success-bg);
 }
 
 .proposal-validation-list div[data-ok="false"] {
-  border-color: rgba(255, 59, 48, 0.34);
+  border-color: var(--danger-bg);
 }
 
 .proposal-validation-list strong {
@@ -2528,7 +2627,7 @@ body {
   height: 22px;
   border: 0;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.68);
+  background: var(--overlay);
   color: #fff;
   cursor: pointer;
   line-height: 1;
@@ -2559,7 +2658,7 @@ body {
 
 .message-input:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .slash-menu {
@@ -2595,7 +2694,7 @@ body {
 .slash-option:hover,
 .slash-option[data-active="true"] {
   background: var(--brand-light);
-  border-color: rgba(0, 113, 227, 0.12);
+  border-color: var(--brand-light);
 }
 
 .slash-option-label {
@@ -2685,7 +2784,7 @@ body {
   min-width: 84px;
   height: 8px;
   border-radius: 999px;
-  background: #e7ecf2;
+  background: var(--context-track);
   overflow: hidden;
 }
 

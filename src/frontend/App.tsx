@@ -18,15 +18,49 @@ import { useEvolutionProposals } from './hooks/useEvolutionProposals.js'
 import type { SessionSandboxConfig } from './types.js'
 import { transformComposerMessage } from './utils/slash-commands.js'
 
+type ThemeMode = 'light' | 'dark'
+
+const THEME_STORAGE_KEY = 'kraken-theme'
+
+function readStoredTheme(): ThemeMode {
+  if (typeof window === 'undefined') return 'light'
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+function writeStoredTheme(theme: ThemeMode) {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+  } catch {
+    // Theme switching still works for the current page if storage is unavailable.
+  }
+}
+
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
   const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage' | 'evolution' | 'json'>('chat')
+  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme())
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
   const defaultWorkspaceRoot = config?.defaultWorkspaceRoot || ''
   const effectiveWorkspaceRoot = workspaceRoot.trim() || defaultWorkspaceRoot
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.theme = theme
+    root.style.colorScheme = theme
+    writeStoredTheme(theme)
+
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    if (themeColor) {
+      themeColor.content = theme === 'dark' ? '#0f1115' : '#f5f5f7'
+    }
+  }, [theme])
 
   useEffect(() => {
     sessions.refresh()
@@ -135,6 +169,27 @@ export default function App() {
       setActiveTab('chat')
     },
     [chat, sessions]
+  )
+
+  const themeControl = (
+    <div className="theme-switch" role="group" aria-label="Color theme">
+      <button
+        className="theme-switch-option"
+        type="button"
+        data-active={theme === 'light'}
+        onClick={() => setTheme('light')}
+      >
+        Day
+      </button>
+      <button
+        className="theme-switch-option"
+        type="button"
+        data-active={theme === 'dark'}
+        onClick={() => setTheme('dark')}
+      >
+        Night
+      </button>
+    </div>
   )
 
   return (
@@ -289,6 +344,7 @@ export default function App() {
               </span>
               <span className="model-pill">{config?.model || 'Model'}</span>
               <ContextWindowMeter contextWindow={sessions.activeSession?.contextWindow} compact />
+              {themeControl}
               <button className="ghost-button" type="button" onClick={handleNewChat}>
                 New chat
               </button>
@@ -299,6 +355,7 @@ export default function App() {
                 {sessions.activeSession?.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || 'Workspace'}
               </span>
               <span className="model-pill">Browse and edit</span>
+              {themeControl}
             </div>
           ) : activeTab === 'scheduled' ? (
             <div className="header-meta">
@@ -310,6 +367,7 @@ export default function App() {
               <span className="model-pill">
                 {config?.schedulerEnabled ? 'Scheduler on' : 'Scheduler off'}
               </span>
+              {themeControl}
               <button className="ghost-button" type="button" onClick={() => void scheduled.refresh()}>
                 Refresh jobs
               </button>
@@ -326,6 +384,7 @@ export default function App() {
                   ? `${modelUsage.summary.modelCount} models`
                   : 'Model logs'}
               </span>
+              {themeControl}
               <button className="ghost-button" type="button" onClick={() => void modelUsage.refresh()}>
                 Refresh usage
               </button>
@@ -338,6 +397,7 @@ export default function App() {
               <span className="model-pill">
                 {evolution.counts.all} total
               </span>
+              {themeControl}
               <button className="ghost-button" type="button" onClick={() => void evolution.refresh()}>
                 Refresh proposals
               </button>
@@ -346,6 +406,7 @@ export default function App() {
             <div className="header-meta">
               <span className="session-count">Local tool</span>
               <span className="model-pill">JSON.parse</span>
+              {themeControl}
             </div>
           )}
         </header>
