@@ -19,6 +19,7 @@ import type {
   ProposalApplyResponse,
   AgentContentBlock,
   MarketAlert,
+  MarketBar,
   MarketNarrative,
   MarketOverview,
   MarketWatchlist,
@@ -276,6 +277,17 @@ export async function fetchMarketTechnical(symbol: string): Promise<TechnicalSig
     `/api/market/technicals/${encodeURIComponent(symbol)}`
   )
   return data.technical
+}
+
+export async function fetchMarketBars(symbol: string, limit = 90): Promise<MarketBar[]> {
+  const query = new URLSearchParams({
+    timeframe: '1d',
+    limit: String(limit),
+  })
+  const data = await request<{ bars: MarketBar[] }>(
+    `/api/market/bars/${encodeURIComponent(symbol)}?${query.toString()}`
+  )
+  return data.bars
 }
 
 export function buildWorkspaceDownloadUrl(params: {

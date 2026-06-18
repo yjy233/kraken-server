@@ -2670,7 +2670,7 @@ textarea::placeholder {
 
 .market-index-grid,
 .market-technical-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .market-card,
@@ -3086,6 +3086,44 @@ textarea::placeholder {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--bg);
+}
+
+.market-sparkline-box {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.market-sparkline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.market-sparkline-header span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.market-sparkline-header strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.market-sparkline {
+  display: block;
+  width: 100%;
+  height: 130px;
+  padding: 10px;
+  color: var(--brand);
 }
 
 .market-macd-box span {

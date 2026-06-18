@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import type {
   InfluencerPost,
+  MarketBar,
   MarketAlert,
   MarketNarrative,
   MarketOverview,
@@ -490,11 +491,14 @@ const TechnicalsView: React.FC<{
             <MarketMetric label="MA10" value={formatPrice(selectedTechnical.ma10)} />
             <MarketMetric label="MA20" value={formatPrice(selectedTechnical.ma20)} />
             <MarketMetric label="RSI6" value={String(selectedTechnical.rsi6)} />
+            <MarketMetric label="ATR14" value={formatPrice(selectedTechnical.atr14)} />
+            <MarketMetric label="Volume" value={selectedTechnical.volumeSignal} />
             <MarketMetric label="Support" value={formatPrice(selectedTechnical.support)} />
             <MarketMetric label="Resistance" value={formatPrice(selectedTechnical.resistance)} />
           </div>
+          <Sparkline bars={selectedTechnical.bars} />
           <div className="market-macd-box">
-            <span>MACD</span>
+            <span>MACD · {selectedTechnical.timeframe}</span>
             <strong>DIF {selectedTechnical.macd.dif} · DEA {selectedTechnical.macd.dea} · HIST {selectedTechnical.macd.hist}</strong>
           </div>
           <div className="market-note-list">
@@ -639,6 +643,47 @@ const Change: React.FC<{ value: number }> = ({ value }) => (
     {formatSignedPct(value)}
   </span>
 )
+
+const Sparkline: React.FC<{ bars: MarketBar[] }> = ({ bars }) => {
+  const points = useMemo(() => buildSparklinePoints(bars), [bars])
+  const last = bars[bars.length - 1]
+  const first = bars[0]
+
+  return (
+    <div className="market-sparkline-box">
+      <div className="market-sparkline-header">
+        <span>Last {bars.length} daily bars</span>
+        {first && last && (
+          <strong>
+            {formatPrice(first.close)} → {formatPrice(last.close)}
+          </strong>
+        )}
+      </div>
+      <svg className="market-sparkline" viewBox="0 0 320 120" role="img" aria-label="Recent close price trend">
+        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  )
+}
+
+function buildSparklinePoints(bars: MarketBar[]): string {
+  if (bars.length === 0) {
+    return ''
+  }
+  const closes = bars.map((bar) => bar.close)
+  const min = Math.min(...closes)
+  const max = Math.max(...closes)
+  const range = max - min || 1
+  return closes.map((close, index) => {
+    const x = bars.length === 1 ? 160 : (index / (bars.length - 1)) * 312 + 4
+    const y = 112 - ((close - min) / range) * 104
+    return `${roundForSvg(x)},${roundForSvg(y)}`
+  }).join(' ')
+}
+
+function roundForSvg(value: number): number {
+  return Math.round(value * 10) / 10
+}
 
 function formatPhase(value: string): string {
   return value
