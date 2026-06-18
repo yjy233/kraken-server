@@ -5,6 +5,7 @@ import type {
   MarketBar,
   MarketNarrative,
   MarketOverview,
+  MarketReport,
   MarketSourceRef,
   MarketStatus,
   MarketSymbol,
@@ -188,6 +189,11 @@ export function createMarketService(options: {
     return overview.alerts
   }
 
+  async function runReport(kind: MarketReport['kind'] = 'intraday'): Promise<MarketReport> {
+    const overview = await getOverview()
+    return buildMarketReport(kind, overview)
+  }
+
   async function buildTechnicalSignal(symbol: string): Promise<TechnicalSignal> {
     const normalized = normalizeSymbol(symbol)
     const bars = await provider.getBars(normalized, '1d', 90)
@@ -209,6 +215,89 @@ export function createMarketService(options: {
     analyzeNarrative,
     getInfluencerPosts,
     getAlerts,
+    runReport,
+  }
+}
+
+function buildMarketReport(kind: MarketReport['kind'], overview: MarketOverview): MarketReport {
+  const generatedAt = new Date().toISOString()
+  const topSector = overview.sectors[0]
+  const strongQuotes = [...overview.quotes]
+    .sort((left, right) => right.changePct - left.changePct)
+    .slice(0, 3)
+  const weakQuotes = [...overview.quotes]
+    .sort((left, right) => left.changePct - right.changePct)
+    .slice(0, 2)
+  const urgentAlerts = overview.alerts.filter((alert) => alert.level === 'urgent')
+  const watchAlerts = overview.alerts.filter((alert) => alert.level === 'watch')
+  const hotNarratives = [...overview.narratives]
+    .sort((left, right) => right.catalystScore - left.catalystScore)
+    .slice(0, 3)
+  const technicals = [...overview.technicals]
+    .sort((left, right) => trendRank(right.trend) - trendRank(left.trend))
+    .slice(0, 4)
+
+  const indexBrief = overview.indices.map((quote) => {
+    return `${quote.symbol} ${formatPct(quote.changePct)}，成交额 ${formatAmount(quote.amount)}。`
+  })
+  const sectorBrief = overview.sectors.slice(0, 4).map((sector, index) => {
+    return `${index + 1}. ${sector.sectorName} 强度 ${sector.strengthScore}，涨跌幅 ${formatPct(sector.changePct)}，扩散 ${sector.diffusionScore}，龙头 ${sector.leaderSymbols.join(', ')}。`
+  })
+  const watchlistBrief = [
+    ...strongQuotes.map((quote) => `${quote.symbol} 领涨 ${formatPct(quote.changePct)}，量比 ${quote.volumeRatio}，成交额 ${formatAmount(quote.amount)}。`),
+    ...weakQuotes.map((quote) => `${quote.symbol} 偏弱 ${formatPct(quote.changePct)}，先观察是否跌破技术支撑。`),
+  ]
+  const narrativeBrief = hotNarratives.map((narrative) => {
+    return `${narrative.title}：催化 ${narrative.catalystScore}，可信度 ${narrative.confidenceScore}，相关标的 ${narrative.symbols.join(', ') || '未识别'}。`
+  })
+  const technicalBrief = technicals.map((technical) => {
+    return `${technical.symbol} ${technical.trend}，RSI6 ${technical.rsi6}，支撑 ${technical.support}，压力 ${technical.resistance}，${technical.volumeSignal}。`
+  })
+  const alertBrief = overview.alerts.slice(0, 6).map((alert) => {
+    return `[${alert.level}] ${alert.title}：${alert.message}`
+  })
+  const riskNotes = [
+    '本报告只用于盯盘和投研辅助，不构成投资建议或交易指令。',
+    '论坛、大 V 和小作文内容需要用公告、新闻和成交数据交叉验证。',
+    '低频或 mock 数据不适合做高实时性交易决策。',
+    ...(topSector && topSector.riskScore >= 60 ? [`${topSector.sectorName} 风险分 ${topSector.riskScore}，注意一致性过高后的分歧。`] : []),
+    ...(urgentAlerts.length > 0 ? [`存在 ${urgentAlerts.length} 条 urgent 告警，需优先核查触发依据。`] : []),
+  ]
+  const followUps = [
+    topSector ? `确认 ${topSector.sectorName} 是否有公告、新闻或成交额继续配合。` : '确认今日是否有明确主线板块。',
+    strongQuotes[0] ? `跟踪 ${strongQuotes[0].symbol} 是否能维持强势并带动板块扩散。` : '跟踪自选股是否出现放量异动。',
+    watchAlerts.length > 0 ? `复核 ${watchAlerts.length} 条 watch 告警是否为有效信号或误报。` : '补充更细的告警规则以降低漏报。',
+    '盘后记录信号触发后的表现，用于后续回测和规则调参。',
+  ]
+
+  const titleKind = kind === 'close'
+    ? '盘后复盘'
+    : kind === 'watchlist'
+      ? '自选股报告'
+      : '盘中盯盘报告'
+  const summary = [
+    topSector ? `当前主线偏向 ${topSector.sectorName}，强度 ${topSector.strengthScore}。` : '当前主线不明确。',
+    strongQuotes.length > 0 ? `自选股中 ${strongQuotes[0]?.symbol} 表现最强。` : '自选股暂无明显领涨。',
+    urgentAlerts.length > 0 ? `有 ${urgentAlerts.length} 条 urgent 告警。` : '暂无 urgent 告警。',
+  ].join(' ')
+
+  return {
+    id: `market-report-${kind}-${overview.status.tradingDay}-${Math.floor(Date.now() / 1000)}`,
+    kind,
+    generatedAt,
+    tradingDay: overview.status.tradingDay,
+    provider: overview.status.provider,
+    title: `${overview.status.tradingDay} ${titleKind}`,
+    summary,
+    indexBrief,
+    sectorBrief,
+    watchlistBrief,
+    narrativeBrief,
+    technicalBrief,
+    alertBrief,
+    riskNotes,
+    followUps,
+    sourceRefs: collectSourceRefs(overview),
   }
 }
 
@@ -382,6 +471,30 @@ function getSymbolName(symbol: string, symbols: MarketSymbol[]): string {
 
 function getSymbolSectors(symbol: string, symbols: MarketSymbol[]): string[] {
   return symbols.find((item) => item.symbol === symbol)?.sectorIds || []
+}
+
+function trendRank(trend: TechnicalSignal['trend']): number {
+  if (trend === 'uptrend') return 3
+  if (trend === 'sideways') return 2
+  return 1
+}
+
+function collectSourceRefs(overview: MarketOverview): MarketSourceRef[] {
+  const refs = [
+    ...overview.indices.map((quote) => quote.source),
+    ...overview.quotes.map((quote) => quote.source),
+    ...overview.narratives.map((narrative) => narrative.source),
+    ...overview.technicals.flatMap((technical) => technical.bars.slice(-1).map((bar) => bar.source)),
+  ]
+  const seen = new Set<string>()
+  return refs.filter((ref) => {
+    const key = `${ref.provider}:${ref.sourceName}:${ref.fetchedAt}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  }).slice(0, 20)
 }
 
 function clampScore(value: number): number {
