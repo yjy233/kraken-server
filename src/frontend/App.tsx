@@ -511,6 +511,7 @@ export default function App() {
           <MarketPanel
             overview={market.overview}
             narratives={market.narratives}
+            reports={market.reports}
             loading={market.loading}
             mutating={market.mutating}
             error={market.error}
@@ -518,6 +519,7 @@ export default function App() {
             onAddSymbols={market.addSymbols}
             onRemoveSymbol={market.removeSymbol}
             onAnalyzeNarrative={market.analyzeNarrative}
+            onRunReport={market.runReport}
           />
         ) : (
           <JsonBeautyPanel />

@@ -2809,6 +2809,7 @@ textarea::placeholder {
 .market-narrative-list,
 .market-alert-list,
 .market-post-list,
+.market-report-list,
 .market-note-list,
 .market-symbol-list {
   display: flex;
@@ -2972,7 +2973,8 @@ textarea::placeholder {
 }
 
 .market-symbol-form,
-.market-narrative-form {
+.market-narrative-form,
+.market-report-actions {
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -2994,6 +2996,7 @@ textarea::placeholder {
 
 .market-narrative-item,
 .market-post-item,
+.market-report-item,
 .market-alert-item {
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -3001,7 +3004,8 @@ textarea::placeholder {
   padding: 12px;
 }
 
-.market-narrative-topline {
+.market-narrative-topline,
+.market-report-topline {
   justify-content: flex-start;
   flex-wrap: wrap;
   gap: 8px;
@@ -3012,9 +3016,37 @@ textarea::placeholder {
 
 .market-narrative-item h4,
 .market-post-item h4,
+.market-report-item h4,
 .market-alert-item h4 {
   font-size: 15px;
   line-height: 1.35;
+}
+
+.market-report-section {
+  margin-top: 12px;
+}
+
+.market-report-section h5 {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.market-report-section ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.market-report-section p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
 .market-score-inline,

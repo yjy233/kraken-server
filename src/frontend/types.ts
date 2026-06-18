@@ -428,6 +428,25 @@ export interface MarketOverview {
   technicals: TechnicalSignal[]
 }
 
+export interface MarketReport {
+  id: string
+  kind: 'intraday' | 'close' | 'watchlist'
+  generatedAt: string
+  tradingDay: string
+  provider: string
+  title: string
+  summary: string
+  indexBrief: string[]
+  sectorBrief: string[]
+  watchlistBrief: string[]
+  narrativeBrief: string[]
+  technicalBrief: string[]
+  alertBrief: string[]
+  riskNotes: string[]
+  followUps: string[]
+  sourceRefs: MarketSourceRef[]
+}
+
 export interface RuntimeTimelineToolRecord {
   toolUseId: string
   toolName: string

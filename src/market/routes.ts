@@ -129,7 +129,19 @@ export function createMarketRouter(service: MarketService): express.Router {
     }
   })
 
+  router.post('/reports/run', async (req, res, next) => {
+    try {
+      res.json({ ok: true, report: await service.runReport(parseReportKind(req.body?.kind)) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   return router
+}
+
+function parseReportKind(value: unknown): 'intraday' | 'close' | 'watchlist' {
+  return value === 'close' || value === 'watchlist' ? value : 'intraday'
 }
 
 function parseTimeframe(value: unknown): MarketBar['timeframe'] {

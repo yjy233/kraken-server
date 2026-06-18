@@ -22,6 +22,7 @@ import type {
   MarketBar,
   MarketNarrative,
   MarketOverview,
+  MarketReport,
   MarketWatchlist,
   QuoteSnapshot,
   SectorHeat,
@@ -288,6 +289,14 @@ export async function fetchMarketBars(symbol: string, limit = 90): Promise<Marke
     `/api/market/bars/${encodeURIComponent(symbol)}?${query.toString()}`
   )
   return data.bars
+}
+
+export async function runMarketReport(kind: MarketReport['kind']): Promise<MarketReport> {
+  const data = await request<{ report: MarketReport }>('/api/market/reports/run', {
+    method: 'POST',
+    body: JSON.stringify({ kind }),
+  })
+  return data.report
 }
 
 export function buildWorkspaceDownloadUrl(params: {

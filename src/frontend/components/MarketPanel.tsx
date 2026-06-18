@@ -5,16 +5,18 @@ import type {
   MarketAlert,
   MarketNarrative,
   MarketOverview,
+  MarketReport,
   QuoteSnapshot,
   SectorHeat,
   TechnicalSignal,
 } from '../types.js'
 
-type MarketView = 'overview' | 'watchlist' | 'sectors' | 'narratives' | 'technicals' | 'alerts'
+type MarketView = 'overview' | 'watchlist' | 'sectors' | 'narratives' | 'technicals' | 'alerts' | 'reports'
 
 interface MarketPanelProps {
   overview: MarketOverview | null
   narratives: MarketNarrative[]
+  reports: MarketReport[]
   loading: boolean
   mutating: boolean
   error: string | null
@@ -22,11 +24,13 @@ interface MarketPanelProps {
   onAddSymbols: (symbols: string[]) => Promise<unknown>
   onRemoveSymbol: (symbol: string) => Promise<unknown>
   onAnalyzeNarrative: (content: string) => Promise<unknown>
+  onRunReport: (kind: MarketReport['kind']) => Promise<unknown>
 }
 
 export const MarketPanel: React.FC<MarketPanelProps> = ({
   overview,
   narratives,
+  reports,
   loading,
   mutating,
   error,
@@ -34,6 +38,7 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
   onAddSymbols,
   onRemoveSymbol,
   onAnalyzeNarrative,
+  onRunReport,
 }) => {
   const [activeView, setActiveView] = useState<MarketView>('overview')
   const [symbolInput, setSymbolInput] = useState('')
@@ -175,6 +180,12 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
               selectedSymbol={selectedTechnical?.symbol || selectedSymbol || ''}
               onSelectSymbol={setSelectedSymbol}
             />
+          ) : activeView === 'reports' ? (
+            <ReportsView
+              reports={reports}
+              mutating={mutating}
+              onRunReport={(kind) => void onRunReport(kind)}
+            />
           ) : (
             <AlertsView alerts={overview.alerts} />
           )}
@@ -195,6 +206,7 @@ const MARKET_VIEWS: Array<{ id: MarketView; label: string }> = [
   { id: 'sectors', label: 'Sectors' },
   { id: 'narratives', label: 'Narratives' },
   { id: 'technicals', label: 'Technicals' },
+  { id: 'reports', label: 'Reports' },
   { id: 'alerts', label: 'Alerts' },
 ]
 
@@ -527,6 +539,84 @@ const AlertsView: React.FC<{ alerts: MarketAlert[] }> = ({ alerts }) => (
     </div>
     <AlertList alerts={alerts} />
   </section>
+)
+
+const ReportsView: React.FC<{
+  reports: MarketReport[]
+  mutating: boolean
+  onRunReport: (kind: MarketReport['kind']) => void
+}> = ({ reports, mutating, onRunReport }) => (
+  <div className="market-two-column">
+    <section className="market-card">
+      <div className="market-card-header">
+        <div>
+          <h3>Run Report</h3>
+          <p>Generate deterministic market notes from the current desk state.</p>
+        </div>
+      </div>
+      <div className="market-report-actions">
+        <button className="ghost-button" type="button" onClick={() => onRunReport('intraday')} disabled={mutating}>
+          Intraday
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onRunReport('close')} disabled={mutating}>
+          Close
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onRunReport('watchlist')} disabled={mutating}>
+          Watchlist
+        </button>
+      </div>
+      <div className="market-note-list">
+        <p>Reports are generated from quotes, sector heat, narratives, alerts, and technical signals.</p>
+        <p>They are deliberately phrased as observation notes and risk prompts, not trade instructions.</p>
+      </div>
+    </section>
+
+    <section className="market-card">
+      <div className="market-card-header">
+        <div>
+          <h3>Recent Reports</h3>
+          <p>Keep these as a local audit trail for later scheduler and backtest work.</p>
+        </div>
+      </div>
+      <div className="market-report-list">
+        {reports.length === 0 ? (
+          <p className="market-muted">No reports generated yet.</p>
+        ) : reports.map((report) => (
+          <article className="market-report-item" key={report.id}>
+            <div className="market-report-topline">
+              <span>{report.kind}</span>
+              <span>{report.tradingDay}</span>
+              <span>{formatTime(report.generatedAt)}</span>
+            </div>
+            <h4>{report.title}</h4>
+            <p>{report.summary}</p>
+            <ReportSection title="Sectors" items={report.sectorBrief} />
+            <ReportSection title="Watchlist" items={report.watchlistBrief} />
+            <ReportSection title="Narratives" items={report.narrativeBrief} />
+            <ReportSection title="Technicals" items={report.technicalBrief} />
+            <ReportSection title="Alerts" items={report.alertBrief} />
+            <ReportSection title="Risks" items={report.riskNotes} />
+            <ReportSection title="Follow-ups" items={report.followUps} />
+          </article>
+        ))}
+      </div>
+    </section>
+  </div>
+)
+
+const ReportSection: React.FC<{ title: string; items: string[] }> = ({ title, items }) => (
+  <div className="market-report-section">
+    <h5>{title}</h5>
+    {items.length === 0 ? (
+      <p>No items.</p>
+    ) : (
+      <ul>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    )}
+  </div>
 )
 
 const QuoteTile: React.FC<{ quote: QuoteSnapshot; compact?: boolean }> = ({ quote, compact = false }) => (

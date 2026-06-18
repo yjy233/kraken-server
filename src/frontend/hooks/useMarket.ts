@@ -4,12 +4,14 @@ import {
   analyzeMarketNarrative,
   fetchMarketOverview,
   removeMarketWatchlistSymbol,
+  runMarketReport,
 } from '../api.js'
-import type { MarketNarrative, MarketOverview } from '../types.js'
+import type { MarketNarrative, MarketOverview, MarketReport } from '../types.js'
 
 export function useMarket(active: boolean) {
   const [overview, setOverview] = useState<MarketOverview | null>(null)
   const [analyzedNarratives, setAnalyzedNarratives] = useState<MarketNarrative[]>([])
+  const [reports, setReports] = useState<MarketReport[]>([])
   const [loading, setLoading] = useState(false)
   const [mutating, setMutating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +82,22 @@ export function useMarket(active: boolean) {
     }
   }, [])
 
+  const runReport = useCallback(async (kind: MarketReport['kind']) => {
+    setMutating(true)
+    try {
+      const report = await runMarketReport(kind)
+      setReports((prev) => [report, ...prev.filter((item) => item.id !== report.id)].slice(0, 12))
+      setError(null)
+      return report
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setError(message)
+      throw error
+    } finally {
+      setMutating(false)
+    }
+  }, [])
+
   const narratives = useMemo(() => {
     const existingIds = new Set(analyzedNarratives.map((item) => item.id))
     return [
@@ -102,6 +120,7 @@ export function useMarket(active: boolean) {
   return {
     overview,
     narratives,
+    reports,
     loading,
     mutating,
     error,
@@ -109,5 +128,6 @@ export function useMarket(active: boolean) {
     addSymbols,
     removeSymbol,
     analyzeNarrative,
+    runReport,
   }
 }
