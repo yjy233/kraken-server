@@ -652,6 +652,7 @@ MARKET_ALERT_COOLDOWN_MS=300000
 
 # 原型数据源
 AKSHARE_BASE_URL=http://127.0.0.1:8000
+AKSHARE_TIMEOUT_MS=8000
 TUSHARE_TOKEN=
 
 # 淘股吧授权访问
@@ -662,6 +663,54 @@ TAOGUBA_AUTHOR_IDS=
 # 如果通过 agent-browser 读取授权页面
 ALLOW_AGENT_BROWSER=true
 AGENT_BROWSER_AUTO_CONNECT=true
+```
+
+### 17.1 Provider 切换
+
+当前实现支持两个 provider：
+
+- `mock`：默认 provider，内置样本股票、板块、小作文、大 V 动态和 K 线。
+- `akshare-http`：HTTP 适配层，用于连接用户自己启动的 AKShare 服务；如果 `AKSHARE_BASE_URL` 未配置、请求失败或返回字段不足，行情/K 线会自动 fallback 到 `mock`，避免 Market tab 直接不可用。
+
+启用方式：
+
+```bash
+MARKET_PROVIDER=akshare-http
+AKSHARE_BASE_URL=http://127.0.0.1:8000
+AKSHARE_TIMEOUT_MS=8000
+```
+
+当前 `akshare-http` 适配层约定两个 HTTP 接口：
+
+```text
+GET /api/market/quotes?symbols=600519.SH,300750.SZ
+GET /api/market/bars?symbol=600519.SH&timeframe=1d&limit=90
+```
+
+`quotes` 可返回 `{ "quotes": [...] }` 或数组。字段名可用 `symbol/code/ts_code`、`price/close/latest`、`previousClose/pre_close/prev_close`、`changePct/pct_chg/percent`、`volume/vol`、`amount` 等常见形式。
+
+`bars` 可返回 `{ "bars": [...] }` 或数组。字段名可用 `symbol/code/ts_code`、`date/trade_date/datetime`、`open/high/low/close`、`volume/vol`、`amount`。第一阶段只支持日线 `1d`。
+
+仓库提供了一个无额外 Web 框架依赖的 AKShare bridge：
+
+```bash
+python3 -m pip install akshare
+python3 scripts/market/akshare_http_bridge.py --host 127.0.0.1 --port 8000
+```
+
+启动后可检查：
+
+```bash
+curl "http://127.0.0.1:8000/api/health"
+curl "http://127.0.0.1:8000/api/market/quotes?symbols=600519.SH,300750.SZ"
+curl "http://127.0.0.1:8000/api/market/bars?symbol=600519.SH&timeframe=1d&limit=90"
+```
+
+然后把 Kraken 配成：
+
+```bash
+MARKET_PROVIDER=akshare-http
+AKSHARE_BASE_URL=http://127.0.0.1:8000
 ```
 
 ## 18. 分期实施

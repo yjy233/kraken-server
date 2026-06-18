@@ -41,6 +41,7 @@ import { applyEvolutionProposal } from './evolution/apply.js'
 import { createMarketStore } from './market/store.js'
 import { createMarketService } from './market/service.js'
 import { createMarketRouter } from './market/routes.js'
+import { createMarketProvider } from './market/providers/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -127,6 +128,9 @@ const SCHEDULER_POLL_INTERVAL_MS = parseInteger(process.env.SCHEDULER_POLL_INTER
 const SCHEDULER_MAX_CONCURRENCY = parseInteger(process.env.SCHEDULER_MAX_CONCURRENCY, 1)
 const MEMORY_ENABLED = parseBoolean(process.env.MEMORY_ENABLED, true)
 const MARKET_ENABLED = parseBoolean(process.env.MARKET_ENABLED, true)
+const MARKET_PROVIDER = String(process.env.MARKET_PROVIDER || 'mock').trim()
+const AKSHARE_BASE_URL = String(process.env.AKSHARE_BASE_URL || '').trim()
+const AKSHARE_TIMEOUT_MS = parseInteger(process.env.AKSHARE_TIMEOUT_MS, 8000)
 const FEISHU_CONFIG = readFeishuConfig(process.env)
 
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
@@ -182,8 +186,14 @@ const agentService = createAgentService({
 })
 
 const schedulerStore = createSchedulerStore(SCHEDULED_JOBS_DIR)
+const marketProvider = createMarketProvider({
+  provider: MARKET_PROVIDER,
+  akshareBaseUrl: AKSHARE_BASE_URL,
+  akshareTimeoutMs: AKSHARE_TIMEOUT_MS,
+})
 const marketService = createMarketService({
   store: marketStore,
+  provider: marketProvider,
   enabled: MARKET_ENABLED,
 })
 const workspaceBrowser = createWorkspaceBrowserService({
