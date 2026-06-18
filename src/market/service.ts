@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import type {
   InfluencerPost,
   MarketAlert,
+  MarketBar,
   MarketNarrative,
   MarketOverview,
   MarketSourceRef,
@@ -13,6 +14,7 @@ import type {
 } from './types.js'
 import type { createMarketStore } from './store.js'
 import { normalizeSymbol, normalizeSymbols } from './store.js'
+import { buildTechnicalSignalFromBars } from './indicators.js'
 
 type MarketStore = ReturnType<typeof createMarketStore>
 
@@ -158,6 +160,17 @@ export function createMarketService(options: {
     return buildTechnicalSignal(normalized)
   }
 
+  async function getBars(symbol: string, timeframe: MarketBar['timeframe'] = '1d', limit = 90) {
+    const normalized = normalizeSymbol(symbol)
+    if (!normalized) {
+      throw new Error('symbol is required')
+    }
+    if (timeframe !== '1d') {
+      throw new Error('only 1d bars are available in mock provider')
+    }
+    return buildBars(normalized, timeframe, limit)
+  }
+
   async function getNarratives() {
     return buildNarratives()
   }
@@ -215,11 +228,60 @@ export function createMarketService(options: {
     replaceWatchlistSymbols,
     getHotSectors,
     getTechnicals,
+    getBars,
     getNarratives,
     analyzeNarrative,
     getInfluencerPosts,
     getAlerts,
   }
+}
+
+function buildBars(symbol: string, timeframe: MarketBar['timeframe'] = '1d', limit = 90): MarketBar[] {
+  const normalized = normalizeSymbol(symbol)
+  const basePrice = BASE_PRICES[normalized] || 20 + seededUnit(normalized) * 80
+  const count = Math.max(30, Math.min(240, Math.round(limit)))
+  const bars: MarketBar[] = []
+  let close = basePrice * (0.88 + seededUnit(`${normalized}:bar-start`) * 0.2)
+  const todayNoon = getShanghaiNoonUtc(new Date())
+
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const dayIndex = count - 1 - index
+    const ts = new Date(todayNoon.getTime() - index * 24 * 60 * 60 * 1000).toISOString()
+    const drift = sectorBias(normalized) / 1000
+    const wave = Math.sin(dayIndex / 7 + seededUnit(`${normalized}:wave`) * Math.PI * 2) * 0.014
+    const noise = (seededUnit(`${normalized}:${dayIndex}:noise`) - 0.5) * 0.028
+    const open = close * (1 + (seededUnit(`${normalized}:${dayIndex}:open`) - 0.5) * 0.012)
+    close = Math.max(0.01, close * (1 + drift + wave + noise))
+    const high = Math.max(open, close) * (1 + 0.006 + seededUnit(`${normalized}:${dayIndex}:high`) * 0.018)
+    const low = Math.min(open, close) * (1 - 0.006 - seededUnit(`${normalized}:${dayIndex}:low`) * 0.018)
+    const volume = Math.round((24_000_000 + seededUnit(`${normalized}:${dayIndex}:volume`) * 120_000_000) * (1 + Math.abs(close - open) / Math.max(1, open) * 8))
+    bars.push({
+      symbol: normalized,
+      ts,
+      timeframe,
+      open: round(open, 2),
+      high: round(high, 2),
+      low: round(low, 2),
+      close: round(close, 2),
+      volume,
+      amount: Math.round(volume * close),
+      source: buildSource(ts),
+    })
+  }
+
+  const latestQuote = buildQuote(normalized)
+  const last = bars[bars.length - 1]
+  if (last) {
+    last.close = latestQuote.price
+    last.high = round(Math.max(last.high, latestQuote.high, latestQuote.price), 2)
+    last.low = round(Math.min(last.low, latestQuote.low, latestQuote.price), 2)
+    last.volume = latestQuote.volume
+    last.amount = latestQuote.amount
+    last.ts = latestQuote.ts
+    last.source = latestQuote.source
+  }
+
+  return bars
 }
 
 function buildQuotes(symbols: string[]): QuoteSnapshot[] {
@@ -491,47 +553,17 @@ function buildAlerts(
 }
 
 function buildTechnicalSignal(symbol: string): TechnicalSignal {
-  const quote = buildQuote(symbol)
-  const seed = seededUnit(`${quote.symbol}:tech`)
-  const trend = quote.changePct > 1.2 ? 'uptrend' : quote.changePct < -1.2 ? 'downtrend' : 'sideways'
-  const ma5 = round(quote.price * (1 - 0.006 + seed * 0.012), 2)
-  const ma10 = round(quote.price * (1 - 0.012 + seed * 0.014), 2)
-  const ma20 = round(quote.price * (1 - 0.02 + seed * 0.018), 2)
-  const rsi6 = clampScore(48 + quote.changePct * 6 + seed * 18)
-  const dif = round((quote.price - ma10) / Math.max(1, quote.price) * 8, 3)
-  const dea = round(dif * (0.72 + seed * 0.18), 3)
-  const hist = round(dif - dea, 3)
-  const support = round(Math.min(quote.low, ma20) * 0.985, 2)
-  const resistance = round(Math.max(quote.high, ma5) * 1.018, 2)
-  const volumeSignal = quote.volumeRatio > 1.8 ? 'expanding' : quote.volumeRatio < 0.9 ? 'shrinking' : 'normal'
-  const summary = trend === 'uptrend'
-    ? '短线价格位于均线上方，动量偏强，若放量延续可继续观察。'
-    : trend === 'downtrend'
-      ? '价格弱于短期均线，先关注支撑有效性和量能是否收缩。'
-      : '结构偏震荡，适合等待方向选择或板块共振确认。'
+  return buildTechnicalSignalFromBars(normalizeSymbol(symbol), buildBars(symbol, '1d', 90))
+}
 
-  return {
-    symbol: quote.symbol,
-    ts: quote.ts,
-    trend,
-    ma5,
-    ma10,
-    ma20,
-    rsi6,
-    macd: {
-      dif,
-      dea,
-      hist,
-    },
-    support,
-    resistance,
-    volumeSignal,
-    summary,
-    riskNotes: [
-      '技术信号来自 mock OHLCV 推演，不构成买卖建议。',
-      '若价格跌破支撑或板块热度退潮，当前结构需要重新评估。',
-    ],
-  }
+function getShanghaiNoonUtc(date: Date): Date {
+  const formatted = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+  return new Date(`${formatted}T04:00:00.000Z`)
 }
 
 function computeMarketPhase(date: Date): MarketStatus['phase'] {

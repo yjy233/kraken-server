@@ -1,5 +1,6 @@
 import express from 'express'
 import type { createMarketService } from './service.js'
+import type { MarketBar } from './types.js'
 
 type MarketService = ReturnType<typeof createMarketService>
 
@@ -109,6 +110,17 @@ export function createMarketRouter(service: MarketService): express.Router {
     }
   })
 
+  router.get('/bars/:symbol', async (req, res, next) => {
+    try {
+      const timeframe = parseTimeframe(req.query.timeframe)
+      const rawLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 90
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 90
+      res.json({ ok: true, bars: await service.getBars(req.params.symbol, timeframe, limit) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   router.get('/alerts', async (_req, res, next) => {
     try {
       res.json({ ok: true, alerts: await service.getAlerts() })
@@ -118,6 +130,21 @@ export function createMarketRouter(service: MarketService): express.Router {
   })
 
   return router
+}
+
+function parseTimeframe(value: unknown): MarketBar['timeframe'] {
+  const timeframe = typeof value === 'string' ? value : '1d'
+  if (
+    timeframe === '1d' ||
+    timeframe === '1m' ||
+    timeframe === '5m' ||
+    timeframe === '15m' ||
+    timeframe === '30m' ||
+    timeframe === '60m'
+  ) {
+    return timeframe
+  }
+  return '1d'
 }
 
 function parseSymbols(value: unknown): string[] {
