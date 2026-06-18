@@ -38,6 +38,9 @@ import { summarizeModelUsageLog } from './logging/model-usage.js'
 import { createMemoryStore } from './memory/store.js'
 import { createProposalStore } from './evolution/proposal-store.js'
 import { applyEvolutionProposal } from './evolution/apply.js'
+import { createMarketStore } from './market/store.js'
+import { createMarketService } from './market/service.js'
+import { createMarketRouter } from './market/routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -45,6 +48,7 @@ const ROOT_DIR = path.resolve(__dirname, '..')
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public')
 const SESSION_DIR = path.join(ROOT_DIR, '.sessions')
 const SCHEDULED_JOBS_DIR = path.join(ROOT_DIR, '.scheduled-jobs')
+const MARKET_DIR = path.join(ROOT_DIR, '.market')
 const MEMORY_DIR = path.resolve(expandHomePath(process.env.MEMORY_DIR || path.join(ROOT_DIR, '.memory')))
 const MAX_MARKDOWN_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_WORKSPACE_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -122,6 +126,7 @@ const SCHEDULER_ENABLED = parseBoolean(process.env.SCHEDULER_ENABLED, true)
 const SCHEDULER_POLL_INTERVAL_MS = parseInteger(process.env.SCHEDULER_POLL_INTERVAL_MS, 300000)
 const SCHEDULER_MAX_CONCURRENCY = parseInteger(process.env.SCHEDULER_MAX_CONCURRENCY, 1)
 const MEMORY_ENABLED = parseBoolean(process.env.MEMORY_ENABLED, true)
+const MARKET_ENABLED = parseBoolean(process.env.MARKET_ENABLED, true)
 const FEISHU_CONFIG = readFeishuConfig(process.env)
 
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
@@ -154,6 +159,7 @@ const sessionStore = createSessionStore({
 const wsHub = createWsHub()
 const memoryStore = createMemoryStore(MEMORY_DIR)
 const proposalStore = createProposalStore(MEMORY_DIR)
+const marketStore = createMarketStore(MARKET_DIR)
 TOOL_REGISTRY_OPTIONS.memoryStore = memoryStore
 TOOL_REGISTRY_OPTIONS.proposalStore = proposalStore
 
@@ -176,6 +182,10 @@ const agentService = createAgentService({
 })
 
 const schedulerStore = createSchedulerStore(SCHEDULED_JOBS_DIR)
+const marketService = createMarketService({
+  store: marketStore,
+  enabled: MARKET_ENABLED,
+})
 const workspaceBrowser = createWorkspaceBrowserService({
   defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
   sensitivePaths: SENSITIVE_PATHS,
@@ -257,6 +267,7 @@ app.get('/api/config', (_req, res) => {
     schedulerMaxConcurrency: SCHEDULER_MAX_CONCURRENCY,
     schedulerPollIntervalMs: SCHEDULER_POLL_INTERVAL_MS,
     memoryEnabled: MEMORY_ENABLED,
+    marketEnabled: MARKET_ENABLED,
     skills: getAvailableSkills().map((skill) => ({
       name: skill.name,
       description: skill.description,
@@ -288,6 +299,8 @@ app.get('/api/model-usage', async (_req, res, next) => {
     next(error)
   }
 })
+
+app.use('/api/market', createMarketRouter(marketService))
 
 app.get('/api/memory', async (req, res, next) => {
   try {
@@ -977,6 +990,8 @@ function errorStatus(error: unknown, message: string): number {
     message === 'content is required' ||
     message === 'filename is required' ||
     message === 'workspaceRoot is required' ||
+    message === 'symbol is required' ||
+    message === 'symbols are required' ||
     message === 'Only accepted proposals can be applied' ||
     message.includes('requires a structured') ||
     message.includes('not implemented yet') ||

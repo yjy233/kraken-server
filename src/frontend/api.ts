@@ -18,6 +18,13 @@ import type {
   EvolutionProposalStatus,
   ProposalApplyResponse,
   AgentContentBlock,
+  MarketAlert,
+  MarketNarrative,
+  MarketOverview,
+  MarketWatchlist,
+  QuoteSnapshot,
+  SectorHeat,
+  TechnicalSignal,
 } from './types.js'
 
 const BASE = ''
@@ -213,6 +220,62 @@ export async function fetchWorkspaceFile(params: {
   query.set('path', params.path)
   const data = await request<WorkspaceFile>(`/api/workspace/file?${query.toString()}`)
   return data
+}
+
+export async function fetchMarketOverview(): Promise<MarketOverview> {
+  const data = await request<{ overview: MarketOverview }>('/api/market/overview')
+  return data.overview
+}
+
+export async function fetchMarketQuotes(symbols: string[]): Promise<QuoteSnapshot[]> {
+  const query = new URLSearchParams()
+  if (symbols.length > 0) {
+    query.set('symbols', symbols.join(','))
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const data = await request<{ quotes: QuoteSnapshot[] }>(`/api/market/quotes${suffix}`)
+  return data.quotes
+}
+
+export async function fetchMarketSectors(): Promise<SectorHeat[]> {
+  const data = await request<{ sectors: SectorHeat[] }>('/api/market/sectors/hot')
+  return data.sectors
+}
+
+export async function fetchMarketAlerts(): Promise<MarketAlert[]> {
+  const data = await request<{ alerts: MarketAlert[] }>('/api/market/alerts')
+  return data.alerts
+}
+
+export async function addMarketWatchlistSymbols(symbols: string[]): Promise<MarketWatchlist> {
+  const data = await request<{ watchlist: MarketWatchlist }>('/api/market/watchlists', {
+    method: 'POST',
+    body: JSON.stringify({ symbols }),
+  })
+  return data.watchlist
+}
+
+export async function removeMarketWatchlistSymbol(symbol: string): Promise<MarketWatchlist> {
+  const data = await request<{ watchlist: MarketWatchlist }>(
+    `/api/market/watchlists/${encodeURIComponent(symbol)}`,
+    { method: 'DELETE' }
+  )
+  return data.watchlist
+}
+
+export async function analyzeMarketNarrative(content: string): Promise<MarketNarrative> {
+  const data = await request<{ narrative: MarketNarrative }>('/api/market/narratives/analyze', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+  return data.narrative
+}
+
+export async function fetchMarketTechnical(symbol: string): Promise<TechnicalSignal> {
+  const data = await request<{ technical: TechnicalSignal }>(
+    `/api/market/technicals/${encodeURIComponent(symbol)}`
+  )
+  return data.technical
 }
 
 export function buildWorkspaceDownloadUrl(params: {

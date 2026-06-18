@@ -8,6 +8,7 @@ import { WorkspacePanel } from './components/WorkspacePanel.js'
 import { ModelUsagePanel } from './components/ModelUsagePanel.js'
 import { ProposalReviewPanel } from './components/ProposalReviewPanel.js'
 import { JsonBeautyPanel } from './components/JsonBeautyPanel.js'
+import { MarketPanel } from './components/MarketPanel.js'
 import { ContextWindowMeter } from './components/ContextWindowMeter.js'
 import { useConfig } from './hooks/useConfig.js'
 import { useSessions } from './hooks/useSessions.js'
@@ -15,6 +16,7 @@ import { useChat } from './hooks/useChat.js'
 import { useScheduledJobs } from './hooks/useScheduledJobs.js'
 import { useModelUsage } from './hooks/useModelUsage.js'
 import { useEvolutionProposals } from './hooks/useEvolutionProposals.js'
+import { useMarket } from './hooks/useMarket.js'
 import type { SessionSandboxConfig } from './types.js'
 import { transformComposerMessage } from './utils/slash-commands.js'
 
@@ -42,7 +44,7 @@ function writeStoredTheme(theme: ThemeMode) {
 export default function App() {
   const { config, error: configError } = useConfig()
   const sessions = useSessions()
-  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage' | 'evolution' | 'json'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'scheduled' | 'usage' | 'evolution' | 'json' | 'market'>('chat')
   const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme())
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
@@ -103,6 +105,7 @@ export default function App() {
   const scheduled = useScheduledJobs(activeTab === 'scheduled')
   const modelUsage = useModelUsage(activeTab === 'usage')
   const evolution = useEvolutionProposals(activeTab === 'evolution')
+  const market = useMarket(activeTab === 'market')
 
   useEffect(() => {
     const hasSucceededExecution = Object.values(scheduled.executionsByJob)
@@ -251,6 +254,14 @@ export default function App() {
               <button
                 className="panel-tab"
                 type="button"
+                data-active={activeTab === 'market'}
+                onClick={() => setActiveTab('market')}
+              >
+                Market
+              </button>
+              <button
+                className="panel-tab"
+                type="button"
                 data-active={activeTab === 'json'}
                 onClick={() => setActiveTab('json')}
               >
@@ -324,6 +335,13 @@ export default function App() {
                 <h2>Evolution Proposals</h2>
                 <p>
                   Review self-improvement proposals before they change long-term behavior.
+                </p>
+              </div>
+            ) : activeTab === 'market' ? (
+              <div className="scheduled-header-copy">
+                <h2>Market Desk</h2>
+                <p>
+                  Watch A-share mock quotes, sector heat, narratives, influencer notes, technical signals, and alerts.
                 </p>
               </div>
             ) : (
@@ -402,6 +420,21 @@ export default function App() {
                 Refresh proposals
               </button>
             </div>
+          ) : activeTab === 'market' ? (
+            <div className="header-meta">
+              <span className="session-count">
+                {market.overview
+                  ? `${market.overview.watchlist.symbols.length} symbols`
+                  : 'Market loading'}
+              </span>
+              <span className="model-pill">
+                {config?.marketEnabled === false ? 'Market off' : 'Research only'}
+              </span>
+              {themeControl}
+              <button className="ghost-button" type="button" onClick={() => void market.refresh()}>
+                Refresh market
+              </button>
+            </div>
           ) : (
             <div className="header-meta">
               <span className="session-count">Local tool</span>
@@ -473,6 +506,18 @@ export default function App() {
             onReject={evolution.reject}
             onDryRunApply={evolution.dryRunApply}
             onApply={evolution.apply}
+          />
+        ) : activeTab === 'market' ? (
+          <MarketPanel
+            overview={market.overview}
+            narratives={market.narratives}
+            loading={market.loading}
+            mutating={market.mutating}
+            error={market.error}
+            onRefresh={market.refresh}
+            onAddSymbols={market.addSymbols}
+            onRemoveSymbol={market.removeSymbol}
+            onAnalyzeNarrative={market.analyzeNarrative}
           />
         ) : (
           <JsonBeautyPanel />
