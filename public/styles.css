@@ -2772,6 +2772,10 @@ textarea::placeholder {
   gap: 12px;
 }
 
+.market-quote-tile > div {
+  min-width: 0;
+}
+
 .market-quote-tile strong,
 .market-sector-row strong,
 .market-post-topline strong,
@@ -2862,6 +2866,16 @@ textarea::placeholder {
 .market-quote-row div span {
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.market-quote-row strong,
+.market-quote-row div span,
+.market-quote-tile strong,
+.market-quote-tile > div:first-child > span,
+.market-symbol-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .market-watch-row-wrap {
@@ -3086,8 +3100,20 @@ textarea::placeholder {
   color: var(--text);
 }
 
-.market-symbol-button span:first-child {
+.market-symbol-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.market-symbol-copy span:first-child {
   font-weight: 700;
+}
+
+.market-symbol-subtitle {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .market-symbol-button[data-active="true"] {

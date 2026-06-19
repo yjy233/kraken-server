@@ -271,6 +271,7 @@ export interface MarketSourceRef {
 
 export interface QuoteSnapshot {
   symbol: string
+  name?: string
   ts: string
   price: number
   change: number

@@ -20,12 +20,20 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import traceback
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+import requests
+
+QUOTE_CACHE_TTL_SECONDS = 20
+INDEX_CACHE_TTL_SECONDS = 20
+SECTOR_CACHE_TTL_SECONDS = 60
+
+_CACHE: dict[str, tuple[float, Any]] = {}
 
 
 def main() -> int:
@@ -74,6 +82,10 @@ def build_handler(debug: bool):
                         return
                     self.respond_json({"ok": True, "bars": get_bars(symbol, limit)})
                     return
+                if parsed.path == "/api/market/sectors/hot":
+                    limit = parse_int(first(query, "limit"), 12)
+                    self.respond_json({"ok": True, "sectors": get_hot_sectors(limit)})
+                    return
                 self.respond_json({"ok": False, "error": "not found"}, HTTPStatus.NOT_FOUND)
             except Exception as exc:  # noqa: BLE001 - this is a boundary process.
                 payload: dict[str, Any] = {"ok": False, "error": str(exc)}
@@ -101,17 +113,10 @@ def build_handler(debug: bool):
 
 
 def get_quotes(symbols: list[str]) -> list[dict[str, Any]]:
-    ak = import_akshare()
-    rows = normalize_table(ak.stock_zh_a_spot_em())
-    by_symbol: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        symbol = normalize_symbol(get_any(row, ["代码", "symbol", "code"]))
-        if symbol:
-            by_symbol[symbol] = row
-
-    quotes = []
+    rows = load_sina_quote_rows(symbols)
+    quotes: list[dict[str, Any]] = []
     for symbol in symbols:
-        row = by_symbol.get(symbol)
+        row = rows.get(symbol)
         if not row:
             continue
         price = to_float(get_any(row, ["最新价", "price", "close"]))
@@ -120,6 +125,7 @@ def get_quotes(symbols: list[str]) -> list[dict[str, Any]]:
         change = to_float(get_any(row, ["涨跌额", "change"]))
         quotes.append({
             "symbol": symbol,
+            "name": str(get_any(row, ["名称", "name"]) or ""),
             "price": price,
             "change": change if change else price - previous_close,
             "changePct": change_pct,
@@ -138,12 +144,7 @@ def get_quotes(symbols: list[str]) -> list[dict[str, Any]]:
 
 def get_bars(symbol: str, limit: int) -> list[dict[str, Any]]:
     ak = import_akshare()
-    ak_symbol = symbol.split(".")[0]
-    rows = normalize_table(ak.stock_zh_a_hist(
-        symbol=ak_symbol,
-        period="daily",
-        adjust="",
-    ))
+    rows = get_daily_bar_rows(ak, symbol, limit)
     bars = []
     for row in rows[-max(1, min(limit, 300)):]:
         date_value = get_any(row, ["日期", "date", "trade_date"])
@@ -158,6 +159,126 @@ def get_bars(symbol: str, limit: int) -> list[dict[str, Any]]:
             "amount": to_float(get_any(row, ["成交额", "amount"])),
         })
     return bars
+
+
+def get_hot_sectors(limit: int) -> list[dict[str, Any]]:
+    ak = import_akshare()
+    rows = get_cached("sectors", SECTOR_CACHE_TTL_SECONDS, lambda: normalize_table(ak.stock_board_industry_name_em()))
+    sectors = []
+    for row in rows[: max(1, min(limit, 100))]:
+        change_pct = to_float(get_any(row, ["涨跌幅", "changePct", "pct_chg"]))
+        rising_count = to_float(get_any(row, ["上涨家数", "risingCount"]))
+        falling_count = to_float(get_any(row, ["下跌家数", "fallingCount"]))
+        sectors.append({
+            "sectorId": get_any(row, ["板块代码", "code"]),
+            "sectorName": get_any(row, ["板块名称", "名称", "name"]),
+            "changePct": change_pct,
+            "amount": to_float(get_any(row, ["成交额", "amount"])),
+            "risingCount": rising_count,
+            "fallingCount": falling_count,
+            "limitUpCount": to_float(get_any(row, ["涨停家数", "limitUpCount"])),
+            "leaderSymbol": normalize_symbol(get_any(row, ["领涨股票代码", "leaderSymbol"])),
+            "strengthScore": clamp_score(50 + change_pct * 8),
+            "diffusionScore": compute_diffusion_score(rising_count, falling_count),
+            "ts": now_iso(),
+        })
+    return sectors
+
+
+def load_stock_spot_rows(ak: Any) -> dict[str, dict[str, Any]]:
+    rows = get_cached("stock_zh_a_spot", QUOTE_CACHE_TTL_SECONDS, lambda: normalize_table(ak.stock_zh_a_spot()))
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        symbol = normalize_symbol(get_any(row, ["代码", "symbol", "code"]))
+        if symbol:
+            by_symbol[symbol] = row
+    return by_symbol
+
+
+def load_index_spot_rows(ak: Any) -> dict[str, dict[str, Any]]:
+    rows = get_cached("stock_zh_index_spot", INDEX_CACHE_TTL_SECONDS, lambda: normalize_table(ak.stock_zh_index_spot_sina()))
+    aliases = {
+        "SH000001": "000001.SH",
+        "SZ399001": "399001.SZ",
+        "SZ399006": "399006.SZ",
+        "000001": "000001.SH",
+        "399001": "399001.SZ",
+        "399006": "399006.SZ",
+    }
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        raw_code = str(get_any(row, ["代码", "symbol", "code"]) or "").strip().upper()
+        symbol = aliases.get(raw_code) or aliases.get(raw_code.replace("SH", "").replace("SZ", "")) or normalize_symbol(raw_code)
+        if symbol:
+            by_symbol[symbol] = row
+    return by_symbol
+
+
+def load_sina_quote_rows(symbols: list[str]) -> dict[str, dict[str, Any]]:
+    if not symbols:
+        return {}
+    query_symbols = [to_sina_symbol(symbol) for symbol in symbols]
+    cache_key = "sina_quotes:" + ",".join(query_symbols)
+    return get_cached(cache_key, QUOTE_CACHE_TTL_SECONDS, lambda: fetch_sina_quote_rows(symbols, query_symbols))
+
+
+def fetch_sina_quote_rows(symbols: list[str], query_symbols: list[str]) -> dict[str, dict[str, Any]]:
+    response = requests.get(
+        "https://hq.sinajs.cn/list=" + ",".join(query_symbols),
+        headers={"Referer": "https://finance.sina.com.cn"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    response.encoding = "GB18030"
+    rows: dict[str, dict[str, Any]] = {}
+    for symbol, line in zip(symbols, response.text.splitlines()):
+        row = parse_sina_quote_line(line)
+        if row:
+            rows[symbol] = row
+    return rows
+
+
+def parse_sina_quote_line(line: str) -> dict[str, Any] | None:
+    if '="' not in line:
+        return None
+    raw = line.split('="', 1)[1].rstrip('";')
+    fields = raw.split(",")
+    if len(fields) < 32 or not fields[0]:
+        return None
+    return {
+        "名称": fields[0],
+        "今开": fields[1],
+        "昨收": fields[2],
+        "最新价": fields[3],
+        "最高": fields[4],
+        "最低": fields[5],
+        "成交量": fields[8],
+        "成交额": fields[9],
+        "日期": fields[30],
+        "时间": fields[31],
+        "涨跌额": to_float(fields[3]) - to_float(fields[2]),
+        "涨跌幅": ((to_float(fields[3]) - to_float(fields[2])) / to_float(fields[2]) * 100) if to_float(fields[2]) else 0,
+    }
+
+
+def get_daily_bar_rows(ak: Any, symbol: str, limit: int) -> list[dict[str, Any]]:
+    tx_symbol = to_tx_symbol(symbol)
+    start_date = (date.today() - timedelta(days=max(120, limit * 3))).strftime("%Y%m%d")
+    end_date = (date.today() + timedelta(days=1)).strftime("%Y%m%d")
+    try:
+        return normalize_table(ak.stock_zh_a_hist_tx(
+            symbol=tx_symbol,
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
+        ))
+    except Exception:
+        ak_symbol = symbol.split(".")[0]
+        return normalize_table(ak.stock_zh_a_hist(
+            symbol=ak_symbol,
+            period="daily",
+            adjust="",
+        ))
 
 
 def import_akshare():
@@ -178,6 +299,16 @@ def normalize_table(table: Any) -> list[dict[str, Any]]:
 
 def parse_symbols(value: str) -> list[str]:
     return [symbol for symbol in (normalize_symbol(item) for item in value.split(",")) if symbol]
+
+
+def get_cached(key: str, ttl_seconds: int, loader):
+    now = time.time()
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < ttl_seconds:
+      return cached[1]
+    value = loader()
+    _CACHE[key] = (now, value)
+    return value
 
 
 def normalize_symbol(value: Any) -> str:
@@ -201,6 +332,34 @@ def normalize_symbol(value: Any) -> str:
     return raw
 
 
+def to_sina_symbol(symbol: str) -> str:
+    normalized = normalize_symbol(symbol)
+    code, _, exchange = normalized.partition(".")
+    if exchange == "SH":
+        return f"sh{code}"
+    if exchange == "SZ":
+        return f"sz{code}"
+    if exchange == "BJ":
+        return f"bj{code}"
+    return normalized.lower()
+
+
+def is_index_symbol(symbol: str) -> bool:
+    return symbol in {"000001.SH", "399001.SZ", "399006.SZ"}
+
+
+def to_tx_symbol(symbol: str) -> str:
+    normalized = normalize_symbol(symbol)
+    code, _, exchange = normalized.partition(".")
+    if exchange == "SH":
+        return f"sh{code}"
+    if exchange == "SZ":
+        return f"sz{code}"
+    if exchange == "BJ":
+        return f"bj{code}"
+    return normalized.lower()
+
+
 def get_any(row: dict[str, Any], keys: list[str]) -> Any:
     for key in keys:
         if key in row:
@@ -218,6 +377,17 @@ def parse_int(value: str, fallback: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def compute_diffusion_score(rising_count: float, falling_count: float) -> int:
+    total = rising_count + falling_count
+    if total <= 0:
+        return 50
+    return clamp_score(rising_count / total * 100)
+
+
+def clamp_score(value: float) -> int:
+    return max(0, min(100, round(value)))
 
 
 def to_float(value: Any) -> float:

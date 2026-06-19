@@ -23,6 +23,7 @@ export interface MarketSymbol {
 
 export interface QuoteSnapshot {
   symbol: string
+  name?: string
   ts: string
   price: number
   change: number

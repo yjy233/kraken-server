@@ -341,7 +341,7 @@ export default function App() {
               <div className="scheduled-header-copy">
                 <h2>Market Desk</h2>
                 <p>
-                  Watch A-share mock quotes, sector heat, narratives, influencer notes, technical signals, and alerts.
+                  Watch A-share quotes, sector heat, narratives, influencer notes, technical signals, and alerts.
                 </p>
               </div>
             ) : (

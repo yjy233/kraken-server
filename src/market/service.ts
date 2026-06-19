@@ -173,7 +173,7 @@ export function createMarketService(options: {
       catalystScore: clampScore(42 + normalizedSectorIds.length * 10),
       riskScore: normalizedSectorIds.length > 0 ? 54 : 68,
       aiSummary: matchedSymbols.length > 0
-        ? `识别到 ${matchedSymbols.length} 个相关标的。当前基于文本、行情 provider 和 mock/授权数据做结构化归纳，需继续用公告/新闻核验。`
+        ? `识别到 ${matchedSymbols.length} 个相关标的。当前基于文本和已配置行情/授权数据做结构化归纳，需继续用公告/新闻核验。`
         : '未识别到明确股票代码或样本库内公司名称，建议补充来源和涉及标的后再判断。',
       evidenceIds: [],
       contradictionIds: [],
@@ -236,22 +236,26 @@ function buildMarketReport(kind: MarketReport['kind'], overview: MarketOverview)
   const technicals = [...overview.technicals]
     .sort((left, right) => trendRank(right.trend) - trendRank(left.trend))
     .slice(0, 4)
+  const topStrongQuote = strongQuotes[0]
+  const quoteLabels = new Map(
+    [...overview.indices, ...overview.quotes].map((quote) => [quote.symbol, formatQuoteLabel(quote)])
+  )
 
   const indexBrief = overview.indices.map((quote) => {
-    return `${quote.symbol} ${formatPct(quote.changePct)}，成交额 ${formatAmount(quote.amount)}。`
+    return `${formatQuoteLabel(quote)} ${formatPct(quote.changePct)}，成交额 ${formatAmount(quote.amount)}。`
   })
   const sectorBrief = overview.sectors.slice(0, 4).map((sector, index) => {
     return `${index + 1}. ${sector.sectorName} 强度 ${sector.strengthScore}，涨跌幅 ${formatPct(sector.changePct)}，扩散 ${sector.diffusionScore}，龙头 ${sector.leaderSymbols.join(', ')}。`
   })
   const watchlistBrief = [
-    ...strongQuotes.map((quote) => `${quote.symbol} 领涨 ${formatPct(quote.changePct)}，量比 ${quote.volumeRatio}，成交额 ${formatAmount(quote.amount)}。`),
-    ...weakQuotes.map((quote) => `${quote.symbol} 偏弱 ${formatPct(quote.changePct)}，先观察是否跌破技术支撑。`),
+    ...strongQuotes.map((quote) => `${formatQuoteLabel(quote)} 领涨 ${formatPct(quote.changePct)}，量比 ${quote.volumeRatio}，成交额 ${formatAmount(quote.amount)}。`),
+    ...weakQuotes.map((quote) => `${formatQuoteLabel(quote)} 偏弱 ${formatPct(quote.changePct)}，先观察是否跌破技术支撑。`),
   ]
   const narrativeBrief = hotNarratives.map((narrative) => {
     return `${narrative.title}：催化 ${narrative.catalystScore}，可信度 ${narrative.confidenceScore}，相关标的 ${narrative.symbols.join(', ') || '未识别'}。`
   })
   const technicalBrief = technicals.map((technical) => {
-    return `${technical.symbol} ${technical.trend}，RSI6 ${technical.rsi6}，支撑 ${technical.support}，压力 ${technical.resistance}，${technical.volumeSignal}。`
+    return `${quoteLabels.get(technical.symbol) || technical.symbol} ${technical.trend}，RSI6 ${technical.rsi6}，支撑 ${technical.support}，压力 ${technical.resistance}，${technical.volumeSignal}。`
   })
   const alertBrief = overview.alerts.slice(0, 6).map((alert) => {
     return `[${alert.level}] ${alert.title}：${alert.message}`
@@ -259,13 +263,13 @@ function buildMarketReport(kind: MarketReport['kind'], overview: MarketOverview)
   const riskNotes = [
     '本报告只用于盯盘和投研辅助，不构成投资建议或交易指令。',
     '论坛、大 V 和小作文内容需要用公告、新闻和成交数据交叉验证。',
-    '低频或 mock 数据不适合做高实时性交易决策。',
+    '低频或延迟数据不适合做高实时性交易决策。',
     ...(topSector && topSector.riskScore >= 60 ? [`${topSector.sectorName} 风险分 ${topSector.riskScore}，注意一致性过高后的分歧。`] : []),
     ...(urgentAlerts.length > 0 ? [`存在 ${urgentAlerts.length} 条 urgent 告警，需优先核查触发依据。`] : []),
   ]
   const followUps = [
     topSector ? `确认 ${topSector.sectorName} 是否有公告、新闻或成交额继续配合。` : '确认今日是否有明确主线板块。',
-    strongQuotes[0] ? `跟踪 ${strongQuotes[0].symbol} 是否能维持强势并带动板块扩散。` : '跟踪自选股是否出现放量异动。',
+    topStrongQuote ? `跟踪 ${formatQuoteLabel(topStrongQuote)} 是否能维持强势并带动板块扩散。` : '跟踪自选股是否出现放量异动。',
     watchAlerts.length > 0 ? `复核 ${watchAlerts.length} 条 watch 告警是否为有效信号或误报。` : '补充更细的告警规则以降低漏报。',
     '盘后记录信号触发后的表现，用于后续回测和规则调参。',
   ]
@@ -277,7 +281,7 @@ function buildMarketReport(kind: MarketReport['kind'], overview: MarketOverview)
       : '盘中盯盘报告'
   const summary = [
     topSector ? `当前主线偏向 ${topSector.sectorName}，强度 ${topSector.strengthScore}。` : '当前主线不明确。',
-    strongQuotes.length > 0 ? `自选股中 ${strongQuotes[0]?.symbol} 表现最强。` : '自选股暂无明显领涨。',
+    topStrongQuote ? `自选股中 ${formatQuoteLabel(topStrongQuote)} 表现最强。` : '自选股暂无明显领涨。',
     urgentAlerts.length > 0 ? `有 ${urgentAlerts.length} 条 urgent 告警。` : '暂无 urgent 告警。',
   ].join(' ')
 
@@ -333,11 +337,12 @@ function buildAlerts(
   }
 
   if (strongQuote && strongQuote.changePct >= 1) {
+    const quoteLabel = formatQuoteLabel(strongQuote, symbols)
     alerts.push({
       id: `quote-move-${strongQuote.symbol}-${Math.floor(now.getTime() / 300_000)}`,
       level: strongQuote.changePct >= 3 ? 'urgent' : 'watch',
-      title: `${getSymbolName(strongQuote.symbol, symbols)} 盘中异动`,
-      message: `${strongQuote.symbol} 涨幅 ${formatPct(strongQuote.changePct)}，量比 ${strongQuote.volumeRatio}，需要确认是否与板块或消息共振。`,
+      title: `${quoteLabel} 盘中异动`,
+      message: `${quoteLabel} 涨幅 ${formatPct(strongQuote.changePct)}，量比 ${strongQuote.volumeRatio}，需要确认是否与板块或消息共振。`,
       symbols: [strongQuote.symbol],
       sectors: getSymbolSectors(strongQuote.symbol, symbols),
       triggeredAt: now.toISOString(),
@@ -348,11 +353,12 @@ function buildAlerts(
   }
 
   if (highVolume && highVolume.volumeRatio >= 1.8 && highVolume.symbol !== strongQuote?.symbol) {
+    const quoteLabel = formatQuoteLabel(highVolume, symbols)
     alerts.push({
       id: `volume-${highVolume.symbol}-${Math.floor(now.getTime() / 300_000)}`,
       level: 'watch',
-      title: `${getSymbolName(highVolume.symbol, symbols)} 放量`,
-      message: `${highVolume.symbol} 量比 ${highVolume.volumeRatio}，成交额 ${formatAmount(highVolume.amount)}，观察突破或冲高回落。`,
+      title: `${quoteLabel} 放量`,
+      message: `${quoteLabel} 量比 ${highVolume.volumeRatio}，成交额 ${formatAmount(highVolume.amount)}，观察突破或冲高回落。`,
       symbols: [highVolume.symbol],
       sectors: getSymbolSectors(highVolume.symbol, symbols),
       triggeredAt: now.toISOString(),
@@ -467,6 +473,11 @@ function buildUserSource(fetchedAt: string): MarketSourceRef {
 
 function getSymbolName(symbol: string, symbols: MarketSymbol[]): string {
   return symbols.find((item) => item.symbol === symbol)?.name || symbol
+}
+
+function formatQuoteLabel(quote: QuoteSnapshot, symbols: MarketSymbol[] = []): string {
+  const name = quote.name || getSymbolName(quote.symbol, symbols)
+  return name && name !== quote.symbol ? `${name}（${quote.symbol}）` : quote.symbol
 }
 
 function getSymbolSectors(symbol: string, symbols: MarketSymbol[]): string[] {

@@ -128,9 +128,13 @@ const SCHEDULER_POLL_INTERVAL_MS = parseInteger(process.env.SCHEDULER_POLL_INTER
 const SCHEDULER_MAX_CONCURRENCY = parseInteger(process.env.SCHEDULER_MAX_CONCURRENCY, 1)
 const MEMORY_ENABLED = parseBoolean(process.env.MEMORY_ENABLED, true)
 const MARKET_ENABLED = parseBoolean(process.env.MARKET_ENABLED, true)
-const MARKET_PROVIDER = String(process.env.MARKET_PROVIDER || 'mock').trim()
-const AKSHARE_BASE_URL = String(process.env.AKSHARE_BASE_URL || '').trim()
+const MARKET_PROVIDER = String(process.env.MARKET_PROVIDER || 'akshare-http').trim()
+const AKSHARE_BASE_URL = String(process.env.AKSHARE_BASE_URL || 'http://127.0.0.1:8000').trim()
 const AKSHARE_TIMEOUT_MS = parseInteger(process.env.AKSHARE_TIMEOUT_MS, 8000)
+const MARKET_ALLOW_MOCK_FALLBACK = parseBoolean(
+  process.env.MARKET_ALLOW_MOCK_FALLBACK,
+  MARKET_PROVIDER !== 'akshare-http'
+)
 const FEISHU_CONFIG = readFeishuConfig(process.env)
 
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
@@ -190,6 +194,7 @@ const marketProvider = createMarketProvider({
   provider: MARKET_PROVIDER,
   akshareBaseUrl: AKSHARE_BASE_URL,
   akshareTimeoutMs: AKSHARE_TIMEOUT_MS,
+  allowMockFallback: MARKET_ALLOW_MOCK_FALLBACK,
 })
 const marketService = createMarketService({
   store: marketStore,

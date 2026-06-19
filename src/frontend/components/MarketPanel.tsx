@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { fetchMarketTechnical } from '../api.js'
 import type {
   InfluencerPost,
   MarketBar,
@@ -45,15 +46,74 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
   const [narrativeInput, setNarrativeInput] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
+  const [extraTechnicals, setExtraTechnicals] = useState<Record<string, TechnicalSignal>>({})
+  const [technicalLoadingSymbol, setTechnicalLoadingSymbol] = useState<string | null>(null)
+  const [technicalError, setTechnicalError] = useState<{ symbol: string; message: string } | null>(null)
 
   const quotesBySymbol = useMemo(() => {
     return new Map((overview?.quotes || []).map((quote) => [quote.symbol, quote]))
   }, [overview?.quotes])
 
-  const selectedTechnical = useMemo(() => {
-    const symbol = selectedSymbol || overview?.quotes[0]?.symbol
-    return (overview?.technicals || []).find((item) => item.symbol === symbol) || overview?.technicals[0] || null
-  }, [overview?.quotes, overview?.technicals, selectedSymbol])
+  const technicalsBySymbol = useMemo(() => {
+    const items = new Map<string, TechnicalSignal>()
+    for (const technical of Object.values(extraTechnicals)) {
+      items.set(technical.symbol, technical)
+    }
+    for (const technical of overview?.technicals || []) {
+      items.set(technical.symbol, technical)
+    }
+    return items
+  }, [extraTechnicals, overview?.technicals])
+
+  const selectedTechnicalSymbol = selectedSymbol || overview?.quotes[0]?.symbol || ''
+  const selectedTechnical = selectedTechnicalSymbol
+    ? technicalsBySymbol.get(selectedTechnicalSymbol) || null
+    : null
+
+  const mergedTechnicals = useMemo(() => Array.from(technicalsBySymbol.values()), [technicalsBySymbol])
+
+  const handleSelectSymbol = useCallback((symbol: string) => {
+    setSelectedSymbol(symbol)
+    setTechnicalError(null)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedTechnicalSymbol || selectedTechnical) {
+      return
+    }
+    if (technicalError?.symbol === selectedTechnicalSymbol) {
+      return
+    }
+    let cancelled = false
+    const symbol = selectedTechnicalSymbol
+    setTechnicalLoadingSymbol(symbol)
+    void fetchMarketTechnical(symbol)
+      .then((technical) => {
+        if (cancelled) {
+          return
+        }
+        setExtraTechnicals((prev) => ({ ...prev, [technical.symbol]: technical }))
+        setTechnicalError(null)
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+        setTechnicalError({
+          symbol,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => {
+        if (cancelled) {
+          return
+        }
+        setTechnicalLoadingSymbol((current) => current === symbol ? null : current)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTechnical, selectedTechnicalSymbol, technicalError?.symbol])
 
   const handleAddSymbols = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -95,7 +155,7 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
       <section className="market-panel">
         <div className="scheduled-empty">
           <h4>Loading Market</h4>
-          <p>Preparing mock quotes, sectors, narratives, and alerts.</p>
+          <p>Loading configured market data, sectors, narratives, and alerts.</p>
         </div>
       </section>
     )
@@ -144,7 +204,7 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
               overview={overview}
               narratives={narratives}
               onSelectSymbol={(symbol) => {
-                setSelectedSymbol(symbol)
+                handleSelectSymbol(symbol)
                 setActiveView('technicals')
               }}
             />
@@ -157,7 +217,7 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
               onAddSymbols={(event) => void handleAddSymbols(event)}
               onRemoveSymbol={(symbol) => void onRemoveSymbol(symbol)}
               onSelectSymbol={(symbol) => {
-                setSelectedSymbol(symbol)
+                handleSelectSymbol(symbol)
                 setActiveView('technicals')
               }}
             />
@@ -175,10 +235,12 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
           ) : activeView === 'technicals' ? (
             <TechnicalsView
               quotes={overview.quotes}
-              technicals={overview.technicals}
+              technicals={mergedTechnicals}
               selectedTechnical={selectedTechnical}
-              selectedSymbol={selectedTechnical?.symbol || selectedSymbol || ''}
-              onSelectSymbol={setSelectedSymbol}
+              selectedSymbol={selectedTechnicalSymbol}
+              loadingSymbol={technicalLoadingSymbol}
+              error={technicalError}
+              onSelectSymbol={handleSelectSymbol}
             />
           ) : activeView === 'reports' ? (
             <ReportsView
@@ -230,7 +292,7 @@ const OverviewView: React.FC<{
       <div className="market-card-header">
         <div>
           <h3>Index Tape</h3>
-          <p>Mock A-share index snapshots with delayed research-only data.</p>
+          <p>A-share index snapshots from the configured market provider.</p>
         </div>
         <span>{formatTime(overview.status.now)}</span>
       </div>
@@ -249,7 +311,9 @@ const OverviewView: React.FC<{
         </div>
       </div>
       <div className="market-sector-mini-list">
-        {overview.sectors.slice(0, 5).map((sector) => (
+        {overview.sectors.length === 0 ? (
+          <p className="market-muted">No sector data from the current provider.</p>
+        ) : overview.sectors.slice(0, 5).map((sector) => (
           <SectorRow key={sector.sectorId} sector={sector} />
         ))}
       </div>
@@ -359,7 +423,14 @@ const SectorsView: React.FC<{
   quotesBySymbol: Map<string, QuoteSnapshot>
 }> = ({ sectors, quotesBySymbol }) => (
   <div className="market-sector-grid">
-    {sectors.map((sector) => (
+    {sectors.length === 0 ? (
+      <section className="market-card">
+        <div className="scheduled-empty">
+          <h4>No Sector Data</h4>
+          <p>The current provider has not returned real sector heat yet.</p>
+        </div>
+      </section>
+    ) : sectors.map((sector) => (
       <section className="market-card" key={sector.sectorId}>
         <div className="market-card-header">
           <div>
@@ -431,11 +502,13 @@ const NarrativesView: React.FC<{
       <div className="market-card-header">
         <div>
           <h3>Taoguba Influencer Watch</h3>
-          <p>Mock authorized tracking feed. Treat as sentiment, not evidence.</p>
+          <p>Authorized tracking feed. Treat posts as sentiment, not evidence.</p>
         </div>
       </div>
       <div className="market-post-list">
-        {posts.map((post) => (
+        {posts.length === 0 ? (
+          <p className="market-muted">No authorized influencer feed is configured.</p>
+        ) : posts.map((post) => (
           <article className="market-post-item" key={post.id}>
             <div className="market-post-topline">
               <strong>{post.authorName}</strong>
@@ -460,74 +533,97 @@ const TechnicalsView: React.FC<{
   technicals: TechnicalSignal[]
   selectedTechnical: TechnicalSignal | null
   selectedSymbol: string
+  loadingSymbol: string | null
+  error: { symbol: string; message: string } | null
   onSelectSymbol: (symbol: string) => void
-}> = ({ quotes, technicals, selectedTechnical, selectedSymbol, onSelectSymbol }) => (
-  <div className="market-two-column">
-    <section className="market-card">
-      <div className="market-card-header">
-        <div>
-          <h3>Symbols</h3>
-          <p>Select a watchlist symbol to inspect deterministic technical signals.</p>
-        </div>
-      </div>
-      <div className="market-symbol-list">
-        {quotes.map((quote) => (
-          <button
-            key={quote.symbol}
-            className="market-symbol-button"
-            type="button"
-            data-active={selectedSymbol === quote.symbol}
-            onClick={() => onSelectSymbol(quote.symbol)}
-          >
-            <span>{quote.symbol}</span>
-            <Change value={quote.changePct} />
-          </button>
-        ))}
-      </div>
-    </section>
+}> = ({ quotes, technicals, selectedTechnical, selectedSymbol, loadingSymbol, error, onSelectSymbol }) => {
+  const selectedQuote = selectedTechnical ? quotes.find((quote) => quote.symbol === selectedTechnical.symbol) : null
+  const pendingQuote = !selectedTechnical && selectedSymbol
+    ? quotes.find((quote) => quote.symbol === selectedSymbol)
+    : null
+  const selectedError = error?.symbol === selectedSymbol ? error : null
 
-    <section className="market-card market-technical-card">
-      {selectedTechnical ? (
-        <>
-          <div className="market-card-header">
-            <div>
-              <h3>{selectedTechnical.symbol} Technicals</h3>
-              <p>{selectedTechnical.summary}</p>
-            </div>
-            <span className="market-trend-chip" data-trend={selectedTechnical.trend}>
-              {selectedTechnical.trend}
-            </span>
+  return (
+    <div className="market-two-column">
+      <section className="market-card">
+        <div className="market-card-header">
+          <div>
+            <h3>股票列表</h3>
+            <p>从自选股里选择一只，查看技术面信号和风险提示。</p>
           </div>
-          <div className="market-technical-grid">
-            <MarketMetric label="MA5" value={formatPrice(selectedTechnical.ma5)} />
-            <MarketMetric label="MA10" value={formatPrice(selectedTechnical.ma10)} />
-            <MarketMetric label="MA20" value={formatPrice(selectedTechnical.ma20)} />
-            <MarketMetric label="RSI6" value={String(selectedTechnical.rsi6)} />
-            <MarketMetric label="ATR14" value={formatPrice(selectedTechnical.atr14)} />
-            <MarketMetric label="Volume" value={selectedTechnical.volumeSignal} />
-            <MarketMetric label="Support" value={formatPrice(selectedTechnical.support)} />
-            <MarketMetric label="Resistance" value={formatPrice(selectedTechnical.resistance)} />
-          </div>
-          <Sparkline bars={selectedTechnical.bars} />
-          <div className="market-macd-box">
-            <span>MACD · {selectedTechnical.timeframe}</span>
-            <strong>DIF {selectedTechnical.macd.dif} · DEA {selectedTechnical.macd.dea} · HIST {selectedTechnical.macd.hist}</strong>
-          </div>
-          <div className="market-note-list">
-            {selectedTechnical.riskNotes.map((note) => (
-              <p key={note}>{note}</p>
-            ))}
-          </div>
-        </>
-      ) : technicals.length === 0 ? (
-        <div className="scheduled-empty">
-          <h4>No Technicals</h4>
-          <p>Add symbols to the watchlist to generate technical signals.</p>
         </div>
-      ) : null}
-    </section>
-  </div>
-)
+        <div className="market-symbol-list">
+          {quotes.map((quote) => (
+            <button
+              key={quote.symbol}
+              className="market-symbol-button"
+              type="button"
+              data-active={selectedSymbol === quote.symbol}
+              onClick={() => onSelectSymbol(quote.symbol)}
+            >
+              <div className="market-symbol-copy">
+                <span>{quote.name || quote.symbol}</span>
+                {quote.name ? <span className="market-symbol-subtitle">{quote.symbol}</span> : null}
+              </div>
+              <Change value={quote.changePct} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="market-card market-technical-card">
+        {selectedTechnical ? (
+          <>
+            <div className="market-card-header">
+              <div>
+                <h3>{formatQuoteLabel(selectedQuote, selectedTechnical.symbol)} 技术面</h3>
+                <p>{selectedTechnical.summary}</p>
+              </div>
+              <span className="market-trend-chip" data-trend={selectedTechnical.trend}>
+                {selectedTechnical.trend}
+              </span>
+            </div>
+            <div className="market-technical-grid">
+              <MarketMetric label="MA5" value={formatPrice(selectedTechnical.ma5)} />
+              <MarketMetric label="MA10" value={formatPrice(selectedTechnical.ma10)} />
+              <MarketMetric label="MA20" value={formatPrice(selectedTechnical.ma20)} />
+              <MarketMetric label="RSI6" value={String(selectedTechnical.rsi6)} />
+              <MarketMetric label="ATR14" value={formatPrice(selectedTechnical.atr14)} />
+              <MarketMetric label="Volume" value={selectedTechnical.volumeSignal} />
+              <MarketMetric label="Support" value={formatPrice(selectedTechnical.support)} />
+              <MarketMetric label="Resistance" value={formatPrice(selectedTechnical.resistance)} />
+            </div>
+            <Sparkline bars={selectedTechnical.bars} />
+            <div className="market-macd-box">
+              <span>MACD · {selectedTechnical.timeframe}</span>
+              <strong>DIF {selectedTechnical.macd.dif} · DEA {selectedTechnical.macd.dea} · HIST {selectedTechnical.macd.hist}</strong>
+            </div>
+            <div className="market-note-list">
+              {selectedTechnical.riskNotes.map((note) => (
+                <p key={note}>{note}</p>
+              ))}
+            </div>
+          </>
+        ) : loadingSymbol === selectedSymbol && pendingQuote ? (
+          <div className="scheduled-empty">
+            <h4>{formatQuoteLabel(pendingQuote, selectedSymbol)} 技术面加载中</h4>
+            <p>正在拉取这只股票的 K 线和技术指标。</p>
+          </div>
+        ) : selectedError ? (
+          <div className="scheduled-empty">
+            <h4>技术面加载失败</h4>
+            <p>{selectedError.message}</p>
+          </div>
+        ) : technicals.length === 0 ? (
+          <div className="scheduled-empty">
+            <h4>暂无技术面</h4>
+            <p>先把股票加入自选列表，再生成技术面信号。</p>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  )
+}
 
 const AlertsView: React.FC<{ alerts: MarketAlert[] }> = ({ alerts }) => (
   <section className="market-card">
@@ -622,8 +718,8 @@ const ReportSection: React.FC<{ title: string; items: string[] }> = ({ title, it
 const QuoteTile: React.FC<{ quote: QuoteSnapshot; compact?: boolean }> = ({ quote, compact = false }) => (
   <div className="market-quote-tile" data-compact={compact}>
     <div>
-      <strong>{quote.symbol}</strong>
-      <span>{formatTime(quote.ts)}</span>
+      <strong>{quote.name || quote.symbol}</strong>
+      <span>{quote.name ? `${quote.symbol} · ${formatTime(quote.ts)}` : formatTime(quote.ts)}</span>
     </div>
     <div>
       <span className="market-price">{formatPrice(quote.price)}</span>
@@ -635,8 +731,8 @@ const QuoteTile: React.FC<{ quote: QuoteSnapshot; compact?: boolean }> = ({ quot
 const QuoteRow: React.FC<{ quote: QuoteSnapshot; onClick?: () => void }> = ({ quote, onClick }) => (
   <button className="market-quote-row" type="button" onClick={onClick}>
     <div>
-      <strong>{quote.symbol}</strong>
-      <span>Vol {quote.volumeRatio}x · Turn {quote.turnoverRate}%</span>
+      <strong>{quote.name || quote.symbol}</strong>
+      <span>{quote.name ? `${quote.symbol} · ` : ''}Vol {quote.volumeRatio}x · Turn {quote.turnoverRate}%</span>
     </div>
     <span>{formatPrice(quote.price)}</span>
     <Change value={quote.changePct} />
@@ -809,4 +905,11 @@ function formatTime(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+function formatQuoteLabel(quote: QuoteSnapshot | null | undefined, fallbackSymbol: string): string {
+  if (!quote) {
+    return fallbackSymbol
+  }
+  return quote.name ? `${quote.name} (${quote.symbol})` : quote.symbol
 }

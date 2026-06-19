@@ -1,5 +1,15 @@
 # AI 股票盯盘与投研辅助系统需求/技术方案
 
+## 文档导航
+
+这篇文档保留为总方案和范围定义。具体安装、运行和环境说明已拆分到子文档：
+
+- Market 文档入口: [docs/market/README.md](/Users/bill/code/kraken-server/docs/market/README.md)
+- AKShare / uv 安装: [docs/market/akshare-setup.md](/Users/bill/code/kraken-server/docs/market/akshare-setup.md)
+- 数据源说明: [docs/market/data-sources.md](/Users/bill/code/kraken-server/docs/market/data-sources.md)
+- 运行与排错: [docs/market/runbook.md](/Users/bill/code/kraken-server/docs/market/runbook.md)
+- 环境变量入口: [docs/env/README.md](/Users/bill/code/kraken-server/docs/env/README.md)
+
 ## 1. 背景
 
 用户希望在 Kraken Agent 里增加一个新的股票市场工作台，用 AI 辅助完成盘中盯盘、题材/板块强度分析、市场“小作文”研判、淘股吧大 V 动态跟踪、个股技术面分析和智能预警。
@@ -644,7 +654,8 @@ technicalScore =
 
 ```bash
 MARKET_ENABLED=true
-MARKET_PROVIDER=mock
+MARKET_PROVIDER=akshare-http
+MARKET_ALLOW_MOCK_FALLBACK=false
 MARKET_DB_PATH=.market/market.sqlite
 MARKET_DEFAULT_UNIVERSE=A_SHARE
 MARKET_QUOTE_POLL_MS=15000
@@ -652,7 +663,7 @@ MARKET_ALERT_COOLDOWN_MS=300000
 
 # 原型数据源
 AKSHARE_BASE_URL=http://127.0.0.1:8000
-AKSHARE_TIMEOUT_MS=8000
+AKSHARE_TIMEOUT_MS=15000
 TUSHARE_TOKEN=
 
 # 淘股吧授权访问
@@ -669,22 +680,25 @@ AGENT_BROWSER_AUTO_CONNECT=true
 
 当前实现支持两个 provider：
 
-- `mock`：默认 provider，内置样本股票、板块、小作文、大 V 动态和 K 线。
-- `akshare-http`：HTTP 适配层，用于连接用户自己启动的 AKShare 服务；如果 `AKSHARE_BASE_URL` 未配置、请求失败或返回字段不足，行情/K 线会自动 fallback 到 `mock`，避免 Market tab 直接不可用。
+- `akshare-http`：默认 provider，连接本地 AKShare HTTP bridge，行情、日 K 和板块热度优先走真实数据。
+- `mock`：仅用于前端开发或离线演示，需要显式设置 `MARKET_PROVIDER=mock`。
+- `MARKET_ALLOW_MOCK_FALLBACK=false` 时，`akshare-http` 请求失败会直接返回错误，不再伪造行情或 K 线；板块/小作文/大 V 这类尚未接入真实源的模块返回空列表。
 
 启用方式：
 
 ```bash
 MARKET_PROVIDER=akshare-http
+MARKET_ALLOW_MOCK_FALLBACK=false
 AKSHARE_BASE_URL=http://127.0.0.1:8000
-AKSHARE_TIMEOUT_MS=8000
+AKSHARE_TIMEOUT_MS=15000
 ```
 
-当前 `akshare-http` 适配层约定两个 HTTP 接口：
+当前 `akshare-http` 适配层约定三个 HTTP 接口：
 
 ```text
 GET /api/market/quotes?symbols=600519.SH,300750.SZ
 GET /api/market/bars?symbol=600519.SH&timeframe=1d&limit=90
+GET /api/market/sectors/hot?limit=12
 ```
 
 `quotes` 可返回 `{ "quotes": [...] }` 或数组。字段名可用 `symbol/code/ts_code`、`price/close/latest`、`previousClose/pre_close/prev_close`、`changePct/pct_chg/percent`、`volume/vol`、`amount` 等常见形式。
@@ -704,12 +718,14 @@ python3 scripts/market/akshare_http_bridge.py --host 127.0.0.1 --port 8000
 curl "http://127.0.0.1:8000/api/health"
 curl "http://127.0.0.1:8000/api/market/quotes?symbols=600519.SH,300750.SZ"
 curl "http://127.0.0.1:8000/api/market/bars?symbol=600519.SH&timeframe=1d&limit=90"
+curl "http://127.0.0.1:8000/api/market/sectors/hot?limit=12"
 ```
 
 然后把 Kraken 配成：
 
 ```bash
 MARKET_PROVIDER=akshare-http
+MARKET_ALLOW_MOCK_FALLBACK=false
 AKSHARE_BASE_URL=http://127.0.0.1:8000
 ```
 
@@ -769,10 +785,10 @@ AKSHARE_BASE_URL=http://127.0.0.1:8000
 Phase 1 完成标准：
 
 - 前端出现 `Market` tab。
-- `GET /api/market/overview` 返回 mock 市场概览。
+- `GET /api/market/overview` 返回市场概览；当真实数据源不可用时返回明确错误，而不是伪造行情。
 - 用户能添加/删除自选股。
 - 页面能展示热门板块、技术面摘要、异动提醒。
-- 不配置真实数据源时系统仍可运行。
+- 配置 `MARKET_PROVIDER=mock` 时系统可进入离线演示模式。
 
 Phase 2 完成标准：
 

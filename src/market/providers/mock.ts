@@ -169,6 +169,7 @@ function buildQuotes(symbols: string[]): QuoteSnapshot[] {
 
 function buildQuote(symbol: string): QuoteSnapshot {
   const normalized = normalizeSymbol(symbol)
+  const name = getSymbolName(normalized)
   const now = new Date()
   const basePrice = BASE_PRICES[normalized] || 20 + seededUnit(normalized) * 80
   const minuteSlot = Math.floor(now.getTime() / 60_000)
@@ -185,6 +186,7 @@ function buildQuote(symbol: string): QuoteSnapshot {
 
   return {
     symbol: normalized,
+    ...(name ? { name } : {}),
     ts: now.toISOString(),
     price,
     change: round(price - previousClose, 2),
@@ -368,6 +370,10 @@ function sectorBias(symbol: string): number {
 
 function getSymbolSectors(symbol: string): string[] {
   return SYMBOLS.find((item) => item.symbol === symbol)?.sectorIds || []
+}
+
+function getSymbolName(symbol: string): string | undefined {
+  return SYMBOLS.find((item) => item.symbol === symbol)?.name
 }
 
 function seededUnit(value: string): number {
