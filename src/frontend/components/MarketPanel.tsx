@@ -636,13 +636,13 @@ const OverviewView: React.FC<{
     <section className="market-card">
       <div className="market-card-header">
         <div>
-          <h3>Hot Sectors</h3>
-          <p>Strength, breadth, and persistence ranking.</p>
+          <h3>热门板块</h3>
+          <p>按板块涨跌、成交和持续性排序。</p>
         </div>
       </div>
       <div className="market-sector-mini-list">
         {overview.sectors.length === 0 ? (
-          <p className="market-muted">No sector data from the current provider.</p>
+          <p className="market-muted">当前 provider 没有返回板块热度。</p>
         ) : overview.sectors.slice(0, 5).map((sector) => (
           <SectorRow key={sector.sectorId} sector={sector} />
         ))}
@@ -1384,8 +1384,8 @@ const SectorsView: React.FC<{
     ) : sectors.length === 0 ? (
       <section className="market-card">
         <div className="scheduled-empty">
-          <h4>No Sector Data</h4>
-          <p>The current provider has not returned real sector heat yet.</p>
+          <h4>暂无板块数据</h4>
+          <p>当前 provider 还没有返回真实板块热度。</p>
         </div>
       </section>
     ) : sectors.map((sector) => (
@@ -1393,15 +1393,15 @@ const SectorsView: React.FC<{
         <div className="market-card-header">
           <div>
             <h3>{sector.sectorName}</h3>
-            <p>{sector.risingCount} rising · {sector.fallingCount} falling · {sector.limitUpCount} limit-up</p>
+            <p>{sector.risingCount} 家上涨 · {sector.fallingCount} 家下跌 · {sector.limitUpCount} 家涨停</p>
           </div>
           <Change value={sector.changePct} />
         </div>
         <div className="market-score-grid">
-          <ScoreBar label="Strength" value={sector.strengthScore} />
-          <ScoreBar label="Diffusion" value={sector.diffusionScore} />
-          <ScoreBar label="Persistence" value={sector.persistenceScore} />
-          <ScoreBar label="Risk" value={sector.riskScore} tone="risk" />
+          <ScoreBar label="强度" value={sector.strengthScore} />
+          <ScoreBar label="扩散" value={sector.diffusionScore} />
+          <ScoreBar label="持续" value={sector.persistenceScore} />
+          <ScoreBar label="风险" value={sector.riskScore} tone="risk" />
         </div>
         <div className="market-leader-list">
           {sector.leaderSymbols.map((symbol) => {

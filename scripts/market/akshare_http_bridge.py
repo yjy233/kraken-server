@@ -231,21 +231,20 @@ def get_bars(symbol: str, timeframe: str, limit: int) -> list[dict[str, Any]]:
 
 def get_hot_sectors(limit: int) -> list[dict[str, Any]]:
     ak = import_akshare()
+    max_rows = max(1, min(limit, 100))
     rows = get_cached(
-        "sectors",
+        "sectors:hot",
         SECTOR_CACHE_TTL_SECONDS,
-        lambda: get_disk_cached(
-            "sectors",
-            "industry_name_em",
-            30 * 60,
-            lambda: normalize_table(ak.stock_board_industry_name_em()),
-        ),
+        lambda: load_hot_sector_rows(ak, max_rows),
     )
     sectors = []
-    for row in rows[: max(1, min(limit, 100))]:
+    for row in rows[:max_rows]:
         change_pct = to_float(get_any(row, ["涨跌幅", "changePct", "pct_chg"]))
         rising_count = to_float(get_any(row, ["上涨家数", "risingCount"]))
         falling_count = to_float(get_any(row, ["下跌家数", "fallingCount"]))
+        diffusion_score = compute_diffusion_score(rising_count, falling_count)
+        if rising_count <= 0 and falling_count <= 0:
+            diffusion_score = clamp_score(50 + change_pct * 6)
         sectors.append({
             "sectorId": get_any(row, ["板块代码", "code"]),
             "sectorName": get_any(row, ["板块名称", "名称", "name"]),
@@ -256,10 +255,116 @@ def get_hot_sectors(limit: int) -> list[dict[str, Any]]:
             "limitUpCount": to_float(get_any(row, ["涨停家数", "limitUpCount"])),
             "leaderSymbol": normalize_symbol(get_any(row, ["领涨股票代码", "leaderSymbol"])),
             "strengthScore": clamp_score(50 + change_pct * 8),
-            "diffusionScore": compute_diffusion_score(rising_count, falling_count),
+            "diffusionScore": diffusion_score,
+            "persistenceScore": clamp_score(to_float(get_any(row, ["persistenceScore"])) or 50 + change_pct * 4),
+            "riskScore": clamp_score(to_float(get_any(row, ["riskScore"])) or max(25, 68 - max(change_pct, 0) * 3)),
+            "sourceName": normalize_text(get_any(row, ["sourceName"])) or "AKShare",
             "ts": now_iso(),
         })
     return sectors
+
+
+def load_hot_sector_rows(ak: Any, limit: int) -> list[dict[str, Any]]:
+    loaders = [
+        ("eastmoney-industry", "industry_name_em", lambda: normalize_table(ak.stock_board_industry_name_em())),
+        ("eastmoney-concept", "concept_name_em", lambda: normalize_table(ak.stock_board_concept_name_em())),
+        ("ths-industry", "industry_name_ths", lambda: load_ths_industry_sector_rows(ak, limit)),
+    ]
+    errors: list[str] = []
+    for source_name, cache_key, loader in loaders:
+        try:
+            rows = get_disk_cached(
+                "sectors",
+                cache_key,
+                30 * 60,
+                loader,
+            )
+            normalized_rows = [dict(row, sourceName=source_name) for row in rows if isinstance(row, dict)]
+            if normalized_rows:
+                return normalized_rows
+        except Exception as exc:  # noqa: BLE001 - keep bridge resilient across public data sources.
+            errors.append(f"{source_name}: {exc}")
+            continue
+    if errors:
+        print("AKShare sector loaders failed: " + " | ".join(errors), file=sys.stderr, flush=True)
+    return []
+
+
+def load_ths_industry_sector_rows(ak: Any, limit: int) -> list[dict[str, Any]]:
+    name_rows = normalize_table(ak.stock_board_industry_name_ths())
+    candidates = name_rows[: max(limit * 3, 24)]
+    end_date = date.today()
+    start_date = end_date - timedelta(days=14)
+    rows: list[dict[str, Any]] = []
+    for item in candidates:
+        sector_name = normalize_text(get_any(item, ["name", "板块名称", "名称"]))
+        sector_code = normalize_text(get_any(item, ["code", "板块代码"]))
+        if not sector_name:
+            continue
+        try:
+            index_rows = normalize_table(ak.stock_board_industry_index_ths(
+                symbol=sector_name,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            ))
+        except Exception as exc:  # noqa: BLE001 - one sector failure should not blank the whole tab.
+            print(f"AKShare THS sector index failed for {sector_name}: {exc}", file=sys.stderr, flush=True)
+            continue
+        if len(index_rows) < 2:
+            continue
+        previous_row = index_rows[-2]
+        latest_row = index_rows[-1]
+        previous_close = to_float(get_any(previous_row, ["收盘价", "收盘", "close"]))
+        latest_close = to_float(get_any(latest_row, ["收盘价", "收盘", "close"]))
+        change_pct = (latest_close - previous_close) / previous_close * 100 if previous_close else 0.0
+        amount = to_float(get_any(latest_row, ["成交额", "amount"]))
+        rows.append({
+            "板块代码": sector_code,
+            "板块名称": sector_name,
+            "涨跌幅": change_pct,
+            "成交额": amount,
+            "上涨家数": 0,
+            "下跌家数": 0,
+            "涨停家数": 0,
+            "领涨股票代码": "",
+            "persistenceScore": compute_sector_persistence_score(index_rows),
+            "riskScore": compute_sector_risk_score(index_rows),
+        })
+    rows.sort(key=lambda row: (to_float(get_any(row, ["涨跌幅"])), to_float(get_any(row, ["成交额"]))), reverse=True)
+    return rows[: max(limit, 1)]
+
+
+def compute_sector_persistence_score(rows: list[dict[str, Any]]) -> int:
+    recent_rows = rows[-5:]
+    if len(recent_rows) < 2:
+        return 50
+    up_days = 0
+    comparisons = 0
+    for index in range(1, len(recent_rows)):
+        previous_close = to_float(get_any(recent_rows[index - 1], ["收盘价", "收盘", "close"]))
+        close = to_float(get_any(recent_rows[index], ["收盘价", "收盘", "close"]))
+        if previous_close:
+            comparisons += 1
+            if close >= previous_close:
+                up_days += 1
+    return clamp_score(35 + (up_days / comparisons * 55 if comparisons else 15))
+
+
+def compute_sector_risk_score(rows: list[dict[str, Any]]) -> int:
+    recent_rows = rows[-6:]
+    if len(recent_rows) < 2:
+        return 50
+    changes: list[float] = []
+    for index in range(1, len(recent_rows)):
+        previous_close = to_float(get_any(recent_rows[index - 1], ["收盘价", "收盘", "close"]))
+        close = to_float(get_any(recent_rows[index], ["收盘价", "收盘", "close"]))
+        if previous_close:
+            changes.append((close - previous_close) / previous_close * 100)
+    if not changes:
+        return 50
+    volatility = sum(abs(value) for value in changes) / len(changes)
+    latest_change = changes[-1]
+    return clamp_score(38 + volatility * 8 + max(0, latest_change) * 3)
 
 
 def get_dragon_tiger_stocks(window: str, limit: int) -> list[dict[str, Any]]:

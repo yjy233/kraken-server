@@ -124,7 +124,7 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
 
   async function getHotSectors(): Promise<SectorHeat[]> {
     try {
-      const payload = await requestJson('/api/market/sectors/hot', { limit: '12' })
+      const payload = await requestJson('/api/market/sectors/hot', { limit: '12' }, Math.max(timeoutMs, 30_000))
       const rows = Array.isArray((payload as any).sectors)
         ? (payload as any).sectors
         : Array.isArray(payload)
@@ -135,8 +135,11 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
         return sectors
       }
       return fallback.getHotSectors()
-    } catch {
-      return fallback ? fallback.getHotSectors() : []
+    } catch (error) {
+      if (fallback) {
+        return fallback.getHotSectors()
+      }
+      throw wrapAkshareError(error, 'hot sectors')
     }
   }
 
