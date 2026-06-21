@@ -8,7 +8,7 @@
 - 自选股监控
 - 热门板块观察
 - 小作文结构化分析
-- 淘股吧大 V 跟踪预留
+- 淘股吧大 V 跟踪和授权采集预留
 - 技术面分析
 - 研究型报告
 
@@ -111,5 +111,5 @@ src/market/indicators.ts
 1. 为 K 线增加 bridge 侧缓存，降低 `overview` 首次加载时间。
 2. 为板块热度改接更稳定直连源。
 3. 增加公告/新闻 provider。
-4. 增加淘股吧授权采集 provider。
+4. 增加淘股吧授权采集 provider，方案见 `docs/market/taoguba-and-narratives.md`。
 5. 把 report 接入 scheduler，生成盘中/盘后自动报告。

@@ -1,8 +1,8 @@
 import type { MarketBar, TechnicalSignal } from './types.js'
 
 export function buildTechnicalSignalFromBars(symbol: string, bars: MarketBar[]): TechnicalSignal {
-  if (bars.length < 26) {
-    throw new Error('at least 26 bars are required')
+  if (bars.length < 6) {
+    throw new Error('at least 6 bars are required')
   }
 
   const sortedBars = [...bars].sort((left, right) => left.ts.localeCompare(right.ts))
@@ -15,17 +15,19 @@ export function buildTechnicalSignalFromBars(symbol: string, bars: MarketBar[]):
     throw new Error('bars are required')
   }
 
-  const ma5 = round(sma(closes, 5), 2)
-  const ma10 = round(sma(closes, 10), 2)
-  const ma20 = round(sma(closes, 20), 2)
-  const atr14 = round(atr(sortedBars, 14), 2)
-  const rsi6 = Math.round(rsi(closes, 6))
+  const ma5 = round(sma(closes, Math.min(5, closes.length)), 2)
+  const ma10 = round(sma(closes, Math.min(10, closes.length)), 2)
+  const ma20 = round(sma(closes, Math.min(20, closes.length)), 2)
+  const atr14 = round(atr(sortedBars, Math.min(14, Math.max(2, sortedBars.length - 1))), 2)
+  const rsi6 = Math.round(rsi(closes, Math.min(6, Math.max(2, closes.length - 1))))
   const macdValue = macd(closes)
-  const recentBars = sortedBars.slice(-20)
+  const recentBars = sortedBars.slice(-Math.min(20, sortedBars.length))
   const support = round(Math.min(...recentBars.map((bar) => bar.low)), 2)
   const resistance = round(Math.max(...recentBars.map((bar) => bar.high)), 2)
-  const recentVolume = average(volumes.slice(-3))
-  const baselineVolume = average(volumes.slice(-20, -3))
+  const recentVolume = average(volumes.slice(-Math.min(3, volumes.length)))
+  const baselineStart = Math.max(0, volumes.length - Math.min(20, volumes.length))
+  const baselineEnd = Math.max(baselineStart, volumes.length - Math.min(3, volumes.length))
+  const baselineVolume = average(volumes.slice(baselineStart, baselineEnd))
   const volumeRatio = baselineVolume > 0 ? recentVolume / baselineVolume : 1
   const volumeSignal = volumeRatio > 1.25
     ? 'expanding'
@@ -39,6 +41,7 @@ export function buildTechnicalSignalFromBars(symbol: string, bars: MarketBar[]):
       : 'sideways'
   const summary = summarizeTechnical({
     close: lastBar.close,
+    timeframe: lastBar.timeframe,
     trend,
     ma5,
     ma20,
@@ -66,7 +69,7 @@ export function buildTechnicalSignalFromBars(symbol: string, bars: MarketBar[]):
     support,
     resistance,
     volumeSignal,
-    bars: sortedBars.slice(-30),
+    bars: sortedBars.slice(-getTechnicalDisplayBarCount(lastBar.timeframe)),
     summary,
     riskNotes: buildRiskNotes(lastBar.close, support, resistance, atr14),
   }
@@ -94,8 +97,8 @@ function emaSeries(values: number[], period: number): number[] {
 }
 
 function macd(closes: number[]): { dif: number; dea: number; hist: number } {
-  const ema12 = emaSeries(closes, 12)
-  const ema26 = emaSeries(closes, 26)
+  const ema12 = emaSeries(closes, Math.min(12, Math.max(2, closes.length)))
+  const ema26 = emaSeries(closes, Math.min(26, Math.max(3, closes.length)))
   const difSeries = closes.map((_, index) => (ema12[index] ?? 0) - (ema26[index] ?? 0))
   const deaSeries = emaSeries(difSeries, 9)
   const dif = difSeries[difSeries.length - 1] ?? 0
@@ -159,6 +162,7 @@ function round(value: number, digits: number): number {
 
 function summarizeTechnical(input: {
   close: number
+  timeframe: MarketBar['timeframe']
   trend: TechnicalSignal['trend']
   ma5: number
   ma20: number
@@ -167,9 +171,16 @@ function summarizeTechnical(input: {
   support: number
   resistance: number
 }): string {
+  const unit = input.timeframe === '1y'
+    ? '年'
+    : input.timeframe === '1mo'
+      ? '月'
+      : isMinuteTimeframe(input.timeframe)
+        ? '分'
+        : '日'
   const position = input.close >= input.ma20
-    ? '价格位于 20 日均线上方'
-    : '价格位于 20 日均线下方'
+    ? `价格位于 20 ${unit}均线上方`
+    : `价格位于 20 ${unit}均线下方`
   const momentum = input.rsi6 >= 70
     ? '短线动量偏热'
     : input.rsi6 <= 35
@@ -195,4 +206,27 @@ function buildRiskNotes(close: number, support: number, resistance: number, atr1
     `距离压力位 ${resistance} 过近时，不宜忽略冲高回落风险。`,
     `ATR14 为 ${atr14}，用于估计波动，不代表止损或收益承诺。`,
   ]
+}
+
+function isMinuteTimeframe(timeframe: MarketBar['timeframe']): boolean {
+  return timeframe === '1m' || timeframe === '5m' || timeframe === '15m' || timeframe === '30m' || timeframe === '60m'
+}
+
+function getTechnicalDisplayBarCount(timeframe: MarketBar['timeframe']): number {
+  if (timeframe === '1m') {
+    return 240
+  }
+  if (timeframe === '5m') {
+    return 120
+  }
+  if (timeframe === '15m') {
+    return 80
+  }
+  if (timeframe === '30m') {
+    return 60
+  }
+  if (timeframe === '60m') {
+    return 48
+  }
+  return 30
 }

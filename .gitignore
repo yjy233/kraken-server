@@ -45,6 +45,7 @@ pnpm-debug.log*
 .scheduled-jobs/executions/
 .scheduled-jobs/logs/
 .market/
+.cache/
 .runlogs/
 package-lock.json
 

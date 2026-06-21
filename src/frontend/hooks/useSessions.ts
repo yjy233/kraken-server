@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { Session, SessionSandboxConfig, SessionSummary, ContextWindowState } from '../types.js'
-import { fetchSessions, createSession, fetchSession, updateSession, deleteSession as apiDeleteSession, deleteAllSessions as apiDeleteAllSessions } from '../api.js'
+import { fetchSessions, createSession, fetchSession, updateSession, compactSession as apiCompactSession, deleteSession as apiDeleteSession, deleteAllSessions as apiDeleteAllSessions } from '../api.js'
 
 export function useSessions() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -31,6 +31,13 @@ export function useSessions() {
     setActiveSession(session)
     await refresh()
     return session
+  }, [refresh])
+
+  const compact = useCallback(async (sessionId: string) => {
+    const { session, changed } = await apiCompactSession(sessionId)
+    setActiveSession(session)
+    await refresh()
+    return { session, changed }
   }, [refresh])
 
   const remove = useCallback(async (sessionId: string) => {
@@ -72,6 +79,7 @@ export function useSessions() {
     open,
     create,
     patch,
+    compact,
     remove,
     clearAll,
     setActiveSession,

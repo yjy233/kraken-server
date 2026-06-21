@@ -7,6 +7,7 @@
 - [系统方案总览](./system-overview.md)
 - [AKShare 与 uv 安装](./akshare-setup.md)
 - [数据源说明](./data-sources.md)
+- [淘股吧大 V 与小作文采集](./taoguba-and-narratives.md)
 - [运行与排错](./runbook.md)
 
 ## 当前实现边界
@@ -16,7 +17,7 @@
 - 实时 quotes：当前 bridge 直接调用新浪 quote 接口
 - 日 K / 技术指标: 当前 bridge 走 AKShare / 腾讯历史行情
 - 板块热度：预留为真实源；当前上游不稳定时返回空列表，不造假
-- 小作文 / 大 V: 还没有接入真实授权源
+- 小作文 / 大 V: 设计为用户授权源，详见 [淘股吧大 V 与小作文采集](./taoguba-and-narratives.md)
 
 ## 相关文件
 

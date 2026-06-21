@@ -49,6 +49,8 @@ export default function App() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [readRootsInput, setReadRootsInput] = useState('')
+  const [compactingChat, setCompactingChat] = useState(false)
+  const [compactError, setCompactError] = useState<string | null>(null)
   const defaultWorkspaceRoot = config?.defaultWorkspaceRoot || ''
   const effectiveWorkspaceRoot = workspaceRoot.trim() || defaultWorkspaceRoot
 
@@ -79,6 +81,7 @@ export default function App() {
       setSystemPrompt(sessions.activeSession.systemPrompt || config?.defaultSystemPrompt || '')
       setWorkspaceRoot(sessions.activeSession.sandbox?.workspaceRoot || config?.defaultWorkspaceRoot || '')
       setReadRootsInput((sessions.activeSession.sandbox?.readRoots || []).join(', '))
+      setCompactError(null)
     }
   }, [sessions.activeSession?.id, config])
 
@@ -118,11 +121,12 @@ export default function App() {
   }, [scheduled.executionsByJob, sessions])
 
   const displayError = activeTab === 'chat'
-    ? (chat.error || configError)
+    ? (chat.error || compactError || configError)
     : configError
 
   const handleNewChat = useCallback(async () => {
     chat.clearError()
+    setCompactError(null)
     const sp = systemPrompt || config?.defaultSystemPrompt || ''
     await sessions.create(sp, buildSandboxConfig(effectiveWorkspaceRoot, readRootsInput))
   }, [chat, sessions, systemPrompt, config, effectiveWorkspaceRoot, readRootsInput])
@@ -145,6 +149,7 @@ export default function App() {
 
   const handleClearAll = useCallback(async () => {
     chat.clearError()
+    setCompactError(null)
     await sessions.clearAll()
   }, [chat, sessions])
 
@@ -163,6 +168,21 @@ export default function App() {
     const body = sandbox ? { sandbox } : {}
     await sessions.patch(sessions.activeSession.id, body)
   }, [sessions, effectiveWorkspaceRoot, readRootsInput])
+
+  const handleCompactChat = useCallback(async () => {
+    if (!sessions.activeSession || chat.sending || compactingChat) {
+      return
+    }
+    setCompactingChat(true)
+    setCompactError(null)
+    try {
+      await sessions.compact(sessions.activeSession.id)
+    } catch (error) {
+      setCompactError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCompactingChat(false)
+    }
+  }, [chat.sending, compactingChat, sessions])
 
   const handleOpenScheduledSession = useCallback(
     async (sessionId: string) => {
@@ -363,6 +383,14 @@ export default function App() {
               <span className="model-pill">{config?.model || 'Model'}</span>
               <ContextWindowMeter contextWindow={sessions.activeSession?.contextWindow} compact />
               {themeControl}
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => void handleCompactChat()}
+                disabled={!sessions.activeSession || chat.sending || compactingChat || (sessions.activeSession.messages.length < 8)}
+              >
+                {compactingChat ? '压缩中' : '压缩对话'}
+              </button>
               <button className="ghost-button" type="button" onClick={handleNewChat}>
                 New chat
               </button>

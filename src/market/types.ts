@@ -44,7 +44,7 @@ export interface QuoteSnapshot {
 export interface MarketBar {
   symbol: string
   ts: string
-  timeframe: '1d' | '1m' | '5m' | '15m' | '30m' | '60m'
+  timeframe: '1d' | '1mo' | '1y' | '1m' | '5m' | '15m' | '30m' | '60m'
   open: number
   high: number
   low: number
@@ -149,6 +149,143 @@ export interface TechnicalSignal {
   riskNotes: string[]
 }
 
+export interface HotStockSignal {
+  id: string
+  symbol: string
+  name?: string
+  rank: number
+  score: number
+  sourceName: string
+  sourceUrl?: string
+  sourceType: 'taoguba_search_hot' | 'taoguba_popularity_board' | 'taoguba_page'
+  heatText: string
+  reasons: string[]
+  sectors: string[]
+  mentionCount: number
+  fetchedAt: string
+  publishedAt?: string
+  source: MarketSourceRef
+}
+
+export interface HotStockSourceStatus {
+  enabled: boolean
+  provider: string
+  providerLabel: string
+  mode: 'disabled' | 'agent_browser'
+  sourceUrls: string[]
+  fetchedAt?: string
+  message?: string
+  error?: string
+}
+
+export interface DragonTigerStock {
+  id: string
+  symbol: string
+  name?: string
+  latestListedAt: string
+  closePrice: number
+  changePct: number
+  listingCount: number
+  netBuyAmount: number
+  buyAmount: number
+  sellAmount: number
+  totalAmount: number
+  institutionBuyCount: number
+  institutionSellCount: number
+  institutionNetBuyAmount: number
+  interpretation?: string
+  listingReason?: string
+  after1DayReturn?: number
+  after2DayReturn?: number
+  after5DayReturn?: number
+  after10DayReturn?: number
+  source: MarketSourceRef
+}
+
+export interface DragonTigerDailyStock {
+  id: string
+  rawIndex?: number
+  tradeDate: string
+  symbol: string
+  name?: string
+  closePrice: number
+  changePct: number
+  netBuyAmount: number
+  buyAmount: number
+  sellAmount: number
+  totalAmount: number
+  marketAmount: number
+  netBuyRatio: number
+  turnoverAmountRatio: number
+  turnoverRate: number
+  floatMarketCap: number
+  interpretation?: string
+  listingReason?: string
+  after1DayReturn?: number
+  after2DayReturn?: number
+  after5DayReturn?: number
+  after10DayReturn?: number
+  raw?: Record<string, unknown>
+  source: MarketSourceRef
+}
+
+export interface DragonTigerSeat {
+  id: string
+  symbol: string
+  tradeDate: string
+  side: 'buy' | 'sell'
+  rank: number
+  brokerName: string
+  buyAmount: number
+  buyAmountRatio: number
+  sellAmount: number
+  sellAmountRatio: number
+  netAmount: number
+  seatType: 'institution' | 'broker' | 'northbound' | 'unknown'
+  reason?: string
+  source: MarketSourceRef
+}
+
+export interface DragonTigerInstitutionSeat {
+  id: string
+  symbol: string
+  name?: string
+  closePrice: number
+  changePct: number
+  totalAmount: number
+  listingCount: number
+  institutionBuyAmount: number
+  institutionBuyCount: number
+  institutionSellAmount: number
+  institutionSellCount: number
+  institutionNetBuyAmount: number
+  oneMonthChangePct: number
+  source: MarketSourceRef
+}
+
+export interface DragonTigerBrokerTrade {
+  id: string
+  brokerCode?: string
+  brokerName: string
+  brokerShortName?: string
+  tradeDate: string
+  symbol: string
+  name?: string
+  changePct: number
+  buyAmount: number
+  sellAmount: number
+  netAmount: number
+  listingReason?: string
+  after1DayReturn?: number
+  after2DayReturn?: number
+  after3DayReturn?: number
+  after5DayReturn?: number
+  after10DayReturn?: number
+  after20DayReturn?: number
+  after30DayReturn?: number
+  source: MarketSourceRef
+}
+
 export interface MarketStatus {
   enabled: boolean
   provider: string
@@ -172,6 +309,10 @@ export interface MarketOverview {
   influencerPosts: InfluencerPost[]
   alerts: MarketAlert[]
   technicals: TechnicalSignal[]
+  hotStocks: HotStockSignal[]
+  hotStockQuotes: QuoteSnapshot[]
+  hotStockStatus: HotStockSourceStatus
+  dragonTigerStocks: DragonTigerStock[]
 }
 
 export interface MarketReport {

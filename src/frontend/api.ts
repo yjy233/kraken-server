@@ -4,6 +4,11 @@
 
 import type {
   Config,
+  DragonTigerDailyStock,
+  DragonTigerStock,
+  DragonTigerBrokerTrade,
+  DragonTigerInstitutionSeat,
+  DragonTigerSeat,
   Session,
   SessionSummary,
   SessionSandboxConfig,
@@ -26,6 +31,8 @@ import type {
   MarketWatchlist,
   QuoteSnapshot,
   SectorHeat,
+  HotStockSignal,
+  HotStockSourceStatus,
   TechnicalSignal,
 } from './types.js'
 
@@ -70,6 +77,10 @@ export async function fetchSession(sessionId: string): Promise<Session> {
 
 export async function updateSession(sessionId: string, body: { title?: string; systemPrompt?: string; model?: string; sandbox?: SessionSandboxConfig | undefined }): Promise<{ session: Session; summary: SessionSummary }> {
   return request(`/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export async function compactSession(sessionId: string): Promise<{ session: Session; summary: SessionSummary; changed: boolean }> {
+  return request(`/api/sessions/${sessionId}/compact`, { method: 'POST' })
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
@@ -244,6 +255,52 @@ export async function fetchMarketSectors(): Promise<SectorHeat[]> {
   return data.sectors
 }
 
+export async function fetchMarketHotStocks(): Promise<{
+  hotStocks: HotStockSignal[]
+  status: HotStockSourceStatus
+  quotes: QuoteSnapshot[]
+}> {
+  return request<{
+    hotStocks: HotStockSignal[]
+    status: HotStockSourceStatus
+    quotes: QuoteSnapshot[]
+  }>('/api/market/hot-stocks')
+}
+
+export async function fetchDragonTigerSeats(symbol: string, tradeDate?: string): Promise<DragonTigerSeat[]> {
+  const query = new URLSearchParams()
+  if (tradeDate) {
+    query.set('tradeDate', tradeDate)
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const data = await request<{ seats: DragonTigerSeat[] }>(`/api/market/dragon-tiger/seats/${encodeURIComponent(symbol)}${suffix}`)
+  return data.seats
+}
+
+export async function fetchDragonTigerStocks(): Promise<DragonTigerStock[]> {
+  const data = await request<{ stocks: DragonTigerStock[] }>('/api/market/dragon-tiger/stocks')
+  return data.stocks
+}
+
+export async function fetchDragonTigerDailyStocks(): Promise<DragonTigerDailyStock[]> {
+  const data = await request<{ dailyStocks: DragonTigerDailyStock[] }>('/api/market/dragon-tiger/daily')
+  return data.dailyStocks
+}
+
+export async function fetchDragonTigerInstitutions(): Promise<DragonTigerInstitutionSeat[]> {
+  const data = await request<{ institutions: DragonTigerInstitutionSeat[] }>('/api/market/dragon-tiger/institutions')
+  return data.institutions
+}
+
+export async function fetchDragonTigerBrokerTrades(brokerName: string, tradeDate?: string): Promise<DragonTigerBrokerTrade[]> {
+  const query = new URLSearchParams({ brokerName })
+  if (tradeDate) {
+    query.set('tradeDate', tradeDate)
+  }
+  const data = await request<{ trades: DragonTigerBrokerTrade[] }>(`/api/market/dragon-tiger/broker-trades?${query.toString()}`)
+  return data.trades
+}
+
 export async function fetchMarketAlerts(): Promise<MarketAlert[]> {
   const data = await request<{ alerts: MarketAlert[] }>('/api/market/alerts')
   return data.alerts
@@ -273,16 +330,17 @@ export async function analyzeMarketNarrative(content: string): Promise<MarketNar
   return data.narrative
 }
 
-export async function fetchMarketTechnical(symbol: string): Promise<TechnicalSignal> {
+export async function fetchMarketTechnical(symbol: string, timeframe: MarketBar['timeframe'] = '1d'): Promise<TechnicalSignal> {
+  const query = new URLSearchParams({ timeframe })
   const data = await request<{ technical: TechnicalSignal }>(
-    `/api/market/technicals/${encodeURIComponent(symbol)}`
+    `/api/market/technicals/${encodeURIComponent(symbol)}?${query.toString()}`
   )
   return data.technical
 }
 
-export async function fetchMarketBars(symbol: string, limit = 90): Promise<MarketBar[]> {
+export async function fetchMarketBars(symbol: string, limit = 90, timeframe: MarketBar['timeframe'] = '1d'): Promise<MarketBar[]> {
   const query = new URLSearchParams({
-    timeframe: '1d',
+    timeframe,
     limit: String(limit),
   })
   const data = await request<{ bars: MarketBar[] }>(

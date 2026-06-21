@@ -77,6 +77,65 @@ export function createMarketRouter(service: MarketService): express.Router {
     }
   })
 
+  router.get('/hot-stocks', async (_req, res, next) => {
+    try {
+      res.json({ ok: true, ...(await service.getHotStocks()) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/dragon-tiger', async (_req, res, next) => {
+    try {
+      res.json({ ok: true, stocks: await service.getDragonTigerStocks() })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/dragon-tiger/stocks', async (_req, res, next) => {
+    try {
+      res.json({ ok: true, stocks: await service.getDragonTigerStocks() })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/dragon-tiger/daily', async (_req, res, next) => {
+    try {
+      res.json({ ok: true, dailyStocks: await service.getDragonTigerDailyStocks() })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/dragon-tiger/seats/:symbol', async (req, res, next) => {
+    try {
+      const tradeDate = typeof req.query.tradeDate === 'string' ? req.query.tradeDate : undefined
+      res.json({ ok: true, seats: await service.getDragonTigerSeats(req.params.symbol, tradeDate) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/dragon-tiger/institutions', async (_req, res, next) => {
+    try {
+      res.json({ ok: true, institutions: await service.getDragonTigerInstitutions() })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/dragon-tiger/broker-trades', async (req, res, next) => {
+    try {
+      const brokerName = typeof req.query.brokerName === 'string' ? req.query.brokerName : ''
+      const tradeDate = typeof req.query.tradeDate === 'string' ? req.query.tradeDate : undefined
+      res.json({ ok: true, trades: await service.getDragonTigerBrokerTrades(brokerName, tradeDate) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   router.get('/narratives', async (_req, res, next) => {
     try {
       res.json({ ok: true, narratives: await service.getNarratives() })
@@ -104,7 +163,8 @@ export function createMarketRouter(service: MarketService): express.Router {
 
   router.get('/technicals/:symbol', async (req, res, next) => {
     try {
-      res.json({ ok: true, technical: await service.getTechnicals(req.params.symbol) })
+      const timeframe = parseTimeframe(req.query.timeframe)
+      res.json({ ok: true, technical: await service.getTechnicals(req.params.symbol, timeframe) })
     } catch (error) {
       next(error)
     }
@@ -148,6 +208,8 @@ function parseTimeframe(value: unknown): MarketBar['timeframe'] {
   const timeframe = typeof value === 'string' ? value : '1d'
   if (
     timeframe === '1d' ||
+    timeframe === '1mo' ||
+    timeframe === '1y' ||
     timeframe === '1m' ||
     timeframe === '5m' ||
     timeframe === '15m' ||

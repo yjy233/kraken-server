@@ -23,6 +23,8 @@ import {
 } from './utils/helpers.js'
 import { createSessionStore } from './runtime/session-store.js'
 import { createAgentService } from './runtime/agent-service.js'
+import { buildContextSummaryText, estimateConversationTokens } from './runtime/context-window.js'
+import type { SessionMessageRecord } from './runtime/session-store.js'
 import { createSchedulerStore } from './scheduler/store.js'
 import { computeNextRunAt } from './scheduler/planner.js'
 import { validateTimezone } from './scheduler/cron.js'
@@ -42,6 +44,7 @@ import { createMarketStore } from './market/store.js'
 import { createMarketService } from './market/service.js'
 import { createMarketRouter } from './market/routes.js'
 import { createMarketProvider } from './market/providers/index.js'
+import { createTaogubaHotStocksCollector } from './market/social/taoguba-hot-stocks.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -135,6 +138,13 @@ const MARKET_ALLOW_MOCK_FALLBACK = parseBoolean(
   process.env.MARKET_ALLOW_MOCK_FALLBACK,
   MARKET_PROVIDER !== 'akshare-http'
 )
+const TAOGUBA_HOTSTOCKS_ENABLED = parseBoolean(process.env.TAOGUBA_HOTSTOCKS_ENABLED, false)
+const TAOGUBA_HOTSTOCKS_URLS = parseCsv(
+  process.env.TAOGUBA_HOTSTOCKS_URLS || 'https://www.tgb.cn/search/hotPop'
+)
+const TAOGUBA_HOTSTOCKS_LIMIT = parseInteger(process.env.TAOGUBA_HOTSTOCKS_LIMIT, 20)
+const TAOGUBA_HOTSTOCKS_CACHE_TTL_MS = parseInteger(process.env.TAOGUBA_HOTSTOCKS_CACHE_TTL_MS, 300000)
+const TAOGUBA_HOTSTOCKS_TIMEOUT_MS = parseInteger(process.env.TAOGUBA_HOTSTOCKS_TIMEOUT_MS, 30000)
 const FEISHU_CONFIG = readFeishuConfig(process.env)
 
 const ENABLED_TOOLS = (process.env.ENABLED_TOOLS || '')
@@ -196,10 +206,22 @@ const marketProvider = createMarketProvider({
   akshareTimeoutMs: AKSHARE_TIMEOUT_MS,
   allowMockFallback: MARKET_ALLOW_MOCK_FALLBACK,
 })
+const taogubaHotStocksCollector = createTaogubaHotStocksCollector({
+  enabled: MARKET_ENABLED && ALLOW_AGENT_BROWSER && TAOGUBA_HOTSTOCKS_ENABLED,
+  mode: 'agent_browser',
+  urls: TAOGUBA_HOTSTOCKS_URLS,
+  limit: TAOGUBA_HOTSTOCKS_LIMIT,
+  cacheTtlMs: TAOGUBA_HOTSTOCKS_CACHE_TTL_MS,
+  agentBrowserBin: AGENT_BROWSER_BIN,
+  ...(AGENT_BROWSER_ALLOWED_DOMAINS ? { agentBrowserAllowedDomains: AGENT_BROWSER_ALLOWED_DOMAINS } : {}),
+  timeoutMs: TAOGUBA_HOTSTOCKS_TIMEOUT_MS,
+  rootDir: ROOT_DIR,
+})
 const marketService = createMarketService({
   store: marketStore,
   provider: marketProvider,
   enabled: MARKET_ENABLED,
+  hotStockCollector: taogubaHotStocksCollector,
 })
 const workspaceBrowser = createWorkspaceBrowserService({
   defaultWorkspaceRoot: DEFAULT_WORKSPACE_ROOT,
@@ -724,6 +746,31 @@ app.patch('/api/sessions/:sessionId', async (req, res, next) => {
   }
 })
 
+app.post('/api/sessions/:sessionId/compact', async (req, res, next) => {
+  try {
+    const session = await sessionStore.loadSession(req.params.sessionId)
+    if (!session) {
+      return res.status(404).json({ ok: false, error: 'Session not found' })
+    }
+    const compacted = compactSessionMessages(session.messages)
+    if (!compacted.changed) {
+      return res.json({ ok: true, session, summary: sessionStore.summarizeSession(session), changed: false })
+    }
+    session.messages = compacted.messages
+    session.contextWindow = compacted.contextWindow
+    session.updatedAt = new Date().toISOString()
+    await sessionStore.saveSession(session)
+    res.json({
+      ok: true,
+      session,
+      summary: sessionStore.summarizeSession(session),
+      changed: true,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.delete('/api/sessions/:sessionId', async (req, res, next) => {
   try {
     await sessionStore.deleteSession(req.params.sessionId)
@@ -909,6 +956,124 @@ server.listen(PORT, HOST, () => {
 void schedulerService.start()
 void startFeishu()
 
+function compactSessionMessages(messages: SessionMessageRecord[]): {
+  changed: boolean
+  messages: SessionMessageRecord[]
+  contextWindow: {
+    maxTokens: number
+    rawTokens: number
+    effectiveTokens: number
+    rawUsageRatio: number
+    effectiveUsageRatio: number
+    rawUsagePercent: number
+    effectiveUsagePercent: number
+    compressionMode: 'none' | 'partial' | 'full'
+    recentTurnsKept: number
+    summarizedMessages: number
+    originalMessageCount: number
+    effectiveMessageCount: number
+    summaryTokens: number
+  }
+} {
+  const keepRecentTurns = 4
+  const splitIndex = findSessionCompactionSplitIndex(messages, keepRecentTurns)
+  if (splitIndex <= 0 || splitIndex >= messages.length) {
+    return {
+      changed: false,
+      messages,
+      contextWindow: buildCompactedContextWindow(messages, messages, keepRecentTurns, '', 0),
+    }
+  }
+
+  const older = messages.slice(0, splitIndex)
+  const recent = messages.slice(splitIndex)
+  const summaryText = buildContextSummaryText(
+    older.map((message) => ({ role: message.role, content: message.content })),
+    640
+  )
+  if (!summaryText) {
+    return {
+      changed: false,
+      messages,
+      contextWindow: buildCompactedContextWindow(messages, messages, keepRecentTurns, '', 0),
+    }
+  }
+
+  const summaryMessage: SessionMessageRecord = {
+    id: `summary-${Date.now()}`,
+    role: 'assistant',
+    content: `手动压缩的历史对话摘要：\n\n${summaryText}`,
+    createdAt: older.at(-1)?.createdAt || new Date().toISOString(),
+  }
+  const compactedMessages = [summaryMessage, ...recent]
+  return {
+    changed: true,
+    messages: compactedMessages,
+    contextWindow: buildCompactedContextWindow(messages, compactedMessages, keepRecentTurns, summaryText, older.length),
+  }
+}
+
+function findSessionCompactionSplitIndex(messages: SessionMessageRecord[], keepRecentTurns: number): number {
+  if (keepRecentTurns <= 0) {
+    return 0
+  }
+  let userTurnsSeen = 0
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.role !== 'user' || isToolResultOnlySessionMessage(message)) {
+      continue
+    }
+    userTurnsSeen += 1
+    if (userTurnsSeen === keepRecentTurns) {
+      return index
+    }
+  }
+  return 0
+}
+
+function isToolResultOnlySessionMessage(message: SessionMessageRecord): boolean {
+  return Array.isArray(message.content) &&
+    message.content.length > 0 &&
+    message.content.every((block) => block.type === 'tool_result')
+}
+
+function buildCompactedContextWindow(
+  originalMessages: SessionMessageRecord[],
+  effectiveMessages: SessionMessageRecord[],
+  recentTurnsKept: number,
+  summaryText: string,
+  summarizedMessages: number
+) {
+  const rawTokens = estimateConversationTokens({
+    systemPrompt: '',
+    tools: [],
+    messages: originalMessages.map((message) => ({ role: message.role, content: message.content })),
+  })
+  const effectiveTokens = estimateConversationTokens({
+    systemPrompt: '',
+    tools: [],
+    messages: effectiveMessages.map((message) => ({ role: message.role, content: message.content })),
+  })
+  const maxTokens = MAX_CONTEXT_TOKENS
+  const rawUsageRatio = rawTokens / maxTokens
+  const effectiveUsageRatio = effectiveTokens / maxTokens
+  return {
+    maxTokens,
+    rawTokens,
+    effectiveTokens,
+    rawUsageRatio,
+    effectiveUsageRatio,
+    rawUsagePercent: Math.round(rawUsageRatio * 100),
+    effectiveUsagePercent: Math.round(effectiveUsageRatio * 100),
+    compressionMode: effectiveMessages.length < originalMessages.length ? 'full' as const : 'none' as const,
+    recentTurnsKept,
+    summarizedMessages,
+    originalMessageCount: originalMessages.length,
+    effectiveMessageCount: effectiveMessages.length,
+    summaryTokens: summaryText ? Math.ceil(summaryText.length / 4) : 0,
+  }
+}
+
 function normalizeSystemPrompt(systemPrompt: string | undefined): string {
   return agentService.normalizeSystemPrompt(systemPrompt)
 }
@@ -962,6 +1127,13 @@ function normalizeAgentBrowserAllowedDomains(value: string | undefined): string 
     return undefined
   }
   return normalized
+}
+
+function parseCsv(value: string | undefined): string[] {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 function isMissingFileError(error: unknown): boolean {

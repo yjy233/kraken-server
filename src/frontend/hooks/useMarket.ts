@@ -113,7 +113,7 @@ export function useMarket(active: boolean) {
     void refresh()
     const timer = window.setInterval(() => {
       void refresh()
-    }, 30_000)
+    }, 60_000)
     return () => window.clearInterval(timer)
   }, [active, refresh])
 

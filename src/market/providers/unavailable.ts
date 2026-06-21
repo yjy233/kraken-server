@@ -1,4 +1,9 @@
 import type {
+  DragonTigerBrokerTrade,
+  DragonTigerDailyStock,
+  DragonTigerInstitutionSeat,
+  DragonTigerSeat,
+  DragonTigerStock,
   InfluencerPost,
   MarketBar,
   MarketNarrative,
@@ -36,6 +41,11 @@ export function createUnavailableMarketProvider(provider: string, reason: string
     getQuotes: fail as (symbols: string[]) => Promise<QuoteSnapshot[]>,
     getBars: fail as (symbol: string, timeframe: MarketBar['timeframe'], limit: number) => Promise<MarketBar[]>,
     getHotSectors: fail as () => Promise<SectorHeat[]>,
+    getDragonTigerStocks: fail as () => Promise<DragonTigerStock[]>,
+    getDragonTigerDailyStocks: fail as () => Promise<DragonTigerDailyStock[]>,
+    getDragonTigerSeats: fail as (symbol: string, tradeDate?: string) => Promise<DragonTigerSeat[]>,
+    getDragonTigerInstitutions: fail as () => Promise<DragonTigerInstitutionSeat[]>,
+    getDragonTigerBrokerTrades: fail as (brokerName: string, tradeDate?: string) => Promise<DragonTigerBrokerTrade[]>,
     getNarratives: fail as () => Promise<MarketNarrative[]>,
     getInfluencerPosts: fail as () => Promise<InfluencerPost[]>,
   }

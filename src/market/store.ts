@@ -162,7 +162,7 @@ export function normalizeSymbol(value: unknown): string {
     if (raw.startsWith('6')) {
       return `${raw}.SH`
     }
-    if (raw.startsWith('8') || raw.startsWith('4')) {
+    if (raw.startsWith('8') || raw.startsWith('4') || raw.startsWith('9')) {
       return `${raw}.BJ`
     }
     return `${raw}.SZ`

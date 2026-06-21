@@ -1,4 +1,9 @@
 import type {
+  DragonTigerBrokerTrade,
+  DragonTigerDailyStock,
+  DragonTigerInstitutionSeat,
+  DragonTigerSeat,
+  DragonTigerStock,
   InfluencerPost,
   MarketBar,
   MarketNarrative,
@@ -71,8 +76,8 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
   }
 
   async function getBars(symbol: string, timeframe: MarketBar['timeframe'], limit: number): Promise<MarketBar[]> {
-    if (timeframe !== '1d') {
-      throw new Error('only 1d bars are available in akshare-http provider')
+    if (!isSupportedBarTimeframe(timeframe)) {
+      throw new Error('only 1m, 5m, 15m, 30m, 60m, 1d, 1mo, and 1y bars are available in akshare-http provider')
     }
     const normalized = normalizeSymbol(symbol)
     try {
@@ -80,14 +85,28 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
         symbol: normalized,
         timeframe,
         limit: String(limit),
-      })
+      }, getBarRequestTimeoutMs(timeframe, timeoutMs))
       const rows = Array.isArray((payload as any).bars)
         ? (payload as any).bars
         : Array.isArray(payload)
           ? payload
           : []
       const bars = rows.map((row: unknown) => normalizeBar(row, normalized, timeframe)).filter(Boolean) as MarketBar[]
-      const expectedMinRows = Math.min(Math.max(1, limit), 26)
+      const expectedMinRows = timeframe === '1y'
+        ? Math.min(Math.max(1, limit), 6)
+        : timeframe === '1mo'
+          ? Math.min(Math.max(1, limit), 12)
+          : timeframe === '1m'
+            ? Math.min(Math.max(1, limit), 48)
+            : timeframe === '5m'
+              ? Math.min(Math.max(1, limit), 24)
+              : timeframe === '15m'
+                ? Math.min(Math.max(1, limit), 10)
+                : timeframe === '30m'
+                  ? Math.min(Math.max(1, limit), 6)
+                  : timeframe === '60m'
+                    ? Math.min(Math.max(1, limit), 4)
+                    : Math.min(Math.max(1, limit), 26)
       if (bars.length >= expectedMinRows) {
         return bars
       }
@@ -121,6 +140,112 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
     }
   }
 
+  async function getDragonTigerStocks(): Promise<DragonTigerStock[]> {
+    try {
+      const payload = await requestJson('/api/market/dragon-tiger', { window: '近14天', limit: '20' })
+      const rows = Array.isArray((payload as any).stocks)
+        ? (payload as any).stocks
+        : Array.isArray(payload)
+          ? payload
+          : []
+      const stocks = rows.map((row: unknown, index: number) => normalizeDragonTigerStock(row, index)).filter(Boolean) as DragonTigerStock[]
+      if (stocks.length > 0 || !fallback) {
+        return stocks
+      }
+      return fallback.getDragonTigerStocks()
+    } catch (error) {
+      if (fallback) {
+        return fallback.getDragonTigerStocks()
+      }
+      throw wrapAkshareError(error, 'dragon tiger stocks')
+    }
+  }
+
+  async function getDragonTigerDailyStocks(): Promise<DragonTigerDailyStock[]> {
+    try {
+      const payload = await requestJson('/api/market/dragon-tiger/daily', { window: '近14天', limit: '500' }, Math.max(timeoutMs, 20_000))
+      const rows = Array.isArray((payload as any).dailyStocks)
+        ? (payload as any).dailyStocks
+        : Array.isArray(payload)
+          ? payload
+          : []
+      const dailyStocks = rows.map((row: unknown, index: number) => normalizeDragonTigerDailyStock(row, index)).filter(Boolean) as DragonTigerDailyStock[]
+      if (dailyStocks.length > 0 || !fallback) {
+        return dailyStocks
+      }
+      return fallback.getDragonTigerDailyStocks()
+    } catch (error) {
+      if (fallback) {
+        return fallback.getDragonTigerDailyStocks()
+      }
+      throw wrapAkshareError(error, 'dragon tiger daily stocks')
+    }
+  }
+
+  async function getDragonTigerSeats(symbol: string, tradeDate?: string): Promise<DragonTigerSeat[]> {
+    try {
+      const query: Record<string, string> = {
+        symbol: normalizeSymbol(symbol),
+      }
+      if (tradeDate) {
+        query.tradeDate = tradeDate
+      }
+      const payload = await requestJson('/api/market/dragon-tiger/seats', query)
+      const rows = Array.isArray((payload as any).seats)
+        ? (payload as any).seats
+        : Array.isArray(payload)
+          ? payload
+          : []
+      return rows.map((row: unknown, index: number) => normalizeDragonTigerSeat(row, index)).filter(Boolean) as DragonTigerSeat[]
+    } catch (error) {
+      if (fallback) {
+        return fallback.getDragonTigerSeats(symbol, tradeDate)
+      }
+      throw wrapAkshareError(error, 'dragon tiger seats')
+    }
+  }
+
+  async function getDragonTigerInstitutions(): Promise<DragonTigerInstitutionSeat[]> {
+    try {
+      const payload = await requestJson('/api/market/dragon-tiger/institutions', { window: '近一月', limit: '20' })
+      const rows = Array.isArray((payload as any).institutions)
+        ? (payload as any).institutions
+        : Array.isArray(payload)
+          ? payload
+          : []
+      return rows.map((row: unknown, index: number) => normalizeDragonTigerInstitution(row, index)).filter(Boolean) as DragonTigerInstitutionSeat[]
+    } catch (error) {
+      if (fallback) {
+        return fallback.getDragonTigerInstitutions()
+      }
+      throw wrapAkshareError(error, 'dragon tiger institutions')
+    }
+  }
+
+  async function getDragonTigerBrokerTrades(brokerName: string, tradeDate?: string): Promise<DragonTigerBrokerTrade[]> {
+    try {
+      const query: Record<string, string> = {
+        brokerName: brokerName.trim(),
+        limit: '12',
+      }
+      if (tradeDate) {
+        query.tradeDate = tradeDate
+      }
+      const payload = await requestJson('/api/market/dragon-tiger/broker-trades', query, Math.max(timeoutMs, 20_000))
+      const rows = Array.isArray((payload as any).trades)
+        ? (payload as any).trades
+        : Array.isArray(payload)
+          ? payload
+          : []
+      return rows.map((row: unknown, index: number) => normalizeDragonTigerBrokerTrade(row, index)).filter(Boolean) as DragonTigerBrokerTrade[]
+    } catch (error) {
+      if (fallback) {
+        return fallback.getDragonTigerBrokerTrades(brokerName, tradeDate)
+      }
+      throw wrapAkshareError(error, 'dragon tiger broker trades')
+    }
+  }
+
   async function getNarratives(): Promise<MarketNarrative[]> {
     return fallback ? fallback.getNarratives() : []
   }
@@ -129,7 +254,7 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
     return fallback ? fallback.getInfluencerPosts() : []
   }
 
-  async function requestJson(pathname: string, query: Record<string, string>): Promise<unknown> {
+  async function requestJson(pathname: string, query: Record<string, string>, requestTimeoutMs = timeoutMs): Promise<unknown> {
     if (!baseUrl) {
       throw new Error('AKSHARE_BASE_URL is required when MARKET_PROVIDER=akshare-http')
     }
@@ -138,7 +263,7 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
       url.searchParams.set(key, value)
     }
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs)
     try {
       const response = await fetch(url, {
         signal: controller.signal,
@@ -167,9 +292,31 @@ export function createAkshareHttpMarketProvider(options: AkshareHttpProviderOpti
     getQuotes,
     getBars,
     getHotSectors,
+    getDragonTigerStocks,
+    getDragonTigerDailyStocks,
+    getDragonTigerSeats,
+    getDragonTigerInstitutions,
+    getDragonTigerBrokerTrades,
     getNarratives,
     getInfluencerPosts,
   }
+}
+
+function isSupportedBarTimeframe(timeframe: MarketBar['timeframe']): boolean {
+  return timeframe === '1m' || timeframe === '5m' || timeframe === '15m' || timeframe === '30m' || timeframe === '60m' || timeframe === '1d' || timeframe === '1mo' || timeframe === '1y'
+}
+
+function getBarRequestTimeoutMs(timeframe: MarketBar['timeframe'], baseTimeoutMs: number): number {
+  if (timeframe === '1m' || timeframe === '5m' || timeframe === '15m' || timeframe === '30m' || timeframe === '60m') {
+    return Math.max(baseTimeoutMs, 15_000)
+  }
+  if (timeframe === '1y') {
+    return Math.max(baseTimeoutMs, 60_000)
+  }
+  if (timeframe === '1mo') {
+    return Math.max(baseTimeoutMs, 20_000)
+  }
+  return baseTimeoutMs
 }
 
 function wrapAkshareError(error: unknown, context: string): Error {
@@ -229,6 +376,176 @@ function normalizeSector(value: unknown, index: number): SectorHeat | null {
     diffusionScore: clampScore(toNumber(row.diffusionScore ?? row.diffusion_score) || diffusionScore),
     persistenceScore: clampScore(toNumber(row.persistenceScore ?? row.persistence_score) || 50),
     riskScore: clampScore(toNumber(row.riskScore ?? row.risk_score) || Math.max(25, 70 - diffusionScore / 2)),
+  }
+}
+
+function normalizeDragonTigerDailyStock(value: unknown, index: number): DragonTigerDailyStock | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const row = value as Record<string, unknown>
+  const symbol = normalizeSymbol(row.symbol ?? row.code ?? row.ts_code ?? row.代码)
+  const tradeDate = normalizeTimestamp(row.tradeDate ?? row.trade_date ?? row.上榜日 ?? row.日期)
+  if (!symbol) {
+    return null
+  }
+  const name = String(row.name ?? row.名称 ?? '').trim()
+  return {
+    id: `dragon-tiger-daily-${symbol}-${normalizeDateKey(tradeDate)}-${toNumber(row.rawIndex ?? row.序号) || index}`,
+    ...optionalInteger('rawIndex', row.rawIndex ?? row.raw_index ?? row.序号),
+    tradeDate,
+    symbol,
+    ...(name ? { name } : {}),
+    closePrice: round(toNumber(row.closePrice ?? row.close_price ?? row.收盘价), 2),
+    changePct: round(toNumber(row.changePct ?? row.pct_chg ?? row.涨跌幅), 2),
+    netBuyAmount: Math.round(toNumber(row.netBuyAmount ?? row.net_buy_amount ?? row.龙虎榜净买额)),
+    buyAmount: Math.round(toNumber(row.buyAmount ?? row.buy_amount ?? row.龙虎榜买入额)),
+    sellAmount: Math.round(toNumber(row.sellAmount ?? row.sell_amount ?? row.龙虎榜卖出额)),
+    totalAmount: Math.round(toNumber(row.totalAmount ?? row.total_amount ?? row.龙虎榜成交额 ?? row.龙虎榜总成交额)),
+    marketAmount: Math.round(toNumber(row.marketAmount ?? row.market_amount ?? row.市场总成交额)),
+    netBuyRatio: round(toNumber(row.netBuyRatio ?? row.net_buy_ratio ?? row.净买额占总成交比), 4),
+    turnoverAmountRatio: round(toNumber(row.turnoverAmountRatio ?? row.turnover_amount_ratio ?? row.成交额占总成交比), 4),
+    turnoverRate: round(toNumber(row.turnoverRate ?? row.turnover_rate ?? row.换手率), 4),
+    floatMarketCap: Math.round(toNumber(row.floatMarketCap ?? row.float_market_cap ?? row.流通市值)),
+    ...(String(row.interpretation ?? row.解读 ?? '').trim() ? { interpretation: String(row.interpretation ?? row.解读).trim() } : {}),
+    ...(String(row.listingReason ?? row.reason ?? row.上榜原因 ?? '').trim() ? { listingReason: String(row.listingReason ?? row.reason ?? row.上榜原因).trim() } : {}),
+    ...optionalNumber('after1DayReturn', row.after1DayReturn ?? row.after_1_day_return ?? row.上榜后1日),
+    ...optionalNumber('after2DayReturn', row.after2DayReturn ?? row.after_2_day_return ?? row.上榜后2日),
+    ...optionalNumber('after5DayReturn', row.after5DayReturn ?? row.after_5_day_return ?? row.上榜后5日),
+    ...optionalNumber('after10DayReturn', row.after10DayReturn ?? row.after_10_day_return ?? row.上榜后10日),
+    ...(isRecord(row.raw) ? { raw: row.raw } : {}),
+    source: buildSource(tradeDate),
+  }
+}
+
+function normalizeDragonTigerStock(value: unknown, index: number): DragonTigerStock | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const row = value as Record<string, unknown>
+  const symbol = normalizeSymbol(row.symbol ?? row.code ?? row.ts_code)
+  const latestListedAt = normalizeTimestamp(row.latestListedAt ?? row.latest_listed_at ?? row.最近上榜日 ?? row.上榜日)
+  if (!symbol) {
+    return null
+  }
+  const name = String(row.name ?? row.名称 ?? '').trim()
+  return {
+    id: `dragon-tiger-${symbol}-${index}`,
+    symbol,
+    ...(name ? { name } : {}),
+    latestListedAt,
+    closePrice: round(toNumber(row.closePrice ?? row.close_price ?? row.收盘价), 2),
+    changePct: round(toNumber(row.changePct ?? row.pct_chg ?? row.涨跌幅), 2),
+    listingCount: Math.round(toNumber(row.listingCount ?? row.listing_count ?? row.上榜次数)),
+    netBuyAmount: Math.round(toNumber(row.netBuyAmount ?? row.net_buy_amount ?? row.龙虎榜净买额)),
+    buyAmount: Math.round(toNumber(row.buyAmount ?? row.buy_amount ?? row.龙虎榜买入额)),
+    sellAmount: Math.round(toNumber(row.sellAmount ?? row.sell_amount ?? row.龙虎榜卖出额)),
+    totalAmount: Math.round(toNumber(row.totalAmount ?? row.total_amount ?? row.龙虎榜总成交额 ?? row.龙虎榜成交额)),
+    institutionBuyCount: Math.round(toNumber(row.institutionBuyCount ?? row.institution_buy_count ?? row.买方机构次数)),
+    institutionSellCount: Math.round(toNumber(row.institutionSellCount ?? row.institution_sell_count ?? row.卖方机构次数)),
+    institutionNetBuyAmount: Math.round(toNumber(row.institutionNetBuyAmount ?? row.institution_net_buy_amount ?? row.机构买入净额)),
+    ...(String(row.interpretation ?? row.解读 ?? '').trim() ? { interpretation: String(row.interpretation ?? row.解读).trim() } : {}),
+    ...(String(row.listingReason ?? row.reason ?? row.上榜原因 ?? '').trim() ? { listingReason: String(row.listingReason ?? row.reason ?? row.上榜原因).trim() } : {}),
+    ...optionalNumber('after1DayReturn', row.after1DayReturn ?? row.after_1_day_return ?? row.上榜后1日),
+    ...optionalNumber('after2DayReturn', row.after2DayReturn ?? row.after_2_day_return ?? row.上榜后2日),
+    ...optionalNumber('after5DayReturn', row.after5DayReturn ?? row.after_5_day_return ?? row.上榜后5日),
+    ...optionalNumber('after10DayReturn', row.after10DayReturn ?? row.after_10_day_return ?? row.上榜后10日),
+    source: buildSource(latestListedAt),
+  }
+}
+
+function normalizeDragonTigerSeat(value: unknown, index: number): DragonTigerSeat | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const row = value as Record<string, unknown>
+  const symbol = normalizeSymbol(row.symbol ?? row.code ?? row.ts_code)
+  const tradeDate = normalizeTimestamp(row.tradeDate ?? row.trade_date ?? row.交易日)
+  const brokerName = String(row.brokerName ?? row.交易营业部名称 ?? '').trim()
+  const side = row.side === 'sell' ? 'sell' : 'buy'
+  if (!symbol || !brokerName) {
+    return null
+  }
+  return {
+    id: `dragon-tiger-seat-${symbol}-${side}-${index}`,
+    symbol,
+    tradeDate,
+    side,
+    rank: Math.round(toNumber(row.rank ?? row.序号)),
+    brokerName,
+    buyAmount: Math.round(toNumber(row.buyAmount ?? row.买入金额)),
+    buyAmountRatio: round(toNumber(row.buyAmountRatio ?? row['买入金额-占总成交比例']), 4),
+    sellAmount: Math.round(toNumber(row.sellAmount ?? row.卖出金额)),
+    sellAmountRatio: round(toNumber(row.sellAmountRatio ?? row['卖出金额-占总成交比例']), 4),
+    netAmount: Math.round(toNumber(row.netAmount ?? row.净额)),
+    seatType: normalizeSeatType(row.seatType),
+    ...(String(row.reason ?? row.类型 ?? '').trim() ? { reason: String(row.reason ?? row.类型).trim() } : {}),
+    source: buildSource(tradeDate),
+  }
+}
+
+function normalizeDragonTigerInstitution(value: unknown, index: number): DragonTigerInstitutionSeat | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const row = value as Record<string, unknown>
+  const symbol = normalizeSymbol(row.symbol ?? row.code ?? row.ts_code)
+  if (!symbol) {
+    return null
+  }
+  const name = String(row.name ?? row.名称 ?? '').trim()
+  const fetchedAt = new Date().toISOString()
+  return {
+    id: `dragon-tiger-institution-${symbol}-${index}`,
+    symbol,
+    ...(name ? { name } : {}),
+    closePrice: round(toNumber(row.closePrice ?? row.收盘价), 2),
+    changePct: round(toNumber(row.changePct ?? row.涨跌幅), 2),
+    totalAmount: Math.round(toNumber(row.totalAmount ?? row.龙虎榜成交金额)),
+    listingCount: Math.round(toNumber(row.listingCount ?? row.上榜次数)),
+    institutionBuyAmount: Math.round(toNumber(row.institutionBuyAmount ?? row.机构买入额)),
+    institutionBuyCount: Math.round(toNumber(row.institutionBuyCount ?? row.机构买入次数)),
+    institutionSellAmount: Math.round(toNumber(row.institutionSellAmount ?? row.机构卖出额)),
+    institutionSellCount: Math.round(toNumber(row.institutionSellCount ?? row.机构卖出次数)),
+    institutionNetBuyAmount: Math.round(toNumber(row.institutionNetBuyAmount ?? row.机构净买额)),
+    oneMonthChangePct: round(toNumber(row.oneMonthChangePct ?? row['近1个月涨跌幅']), 2),
+    source: buildSource(fetchedAt),
+  }
+}
+
+function normalizeDragonTigerBrokerTrade(value: unknown, index: number): DragonTigerBrokerTrade | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const row = value as Record<string, unknown>
+  const symbol = normalizeSymbol(row.symbol ?? row.code ?? row.股票代码)
+  const brokerName = String(row.brokerName ?? row.营业部名称 ?? '').trim()
+  const tradeDate = normalizeTimestamp(row.tradeDate ?? row.trade_date ?? row.交易日期 ?? row.交易日)
+  if (!symbol || !brokerName) {
+    return null
+  }
+  const name = String(row.name ?? row.股票名称 ?? row.名称 ?? '').trim()
+  return {
+    id: `dragon-tiger-broker-trade-${symbol}-${index}`,
+    ...(String(row.brokerCode ?? row.营业部代码 ?? '').trim() ? { brokerCode: String(row.brokerCode ?? row.营业部代码).trim() } : {}),
+    brokerName,
+    ...(String(row.brokerShortName ?? row.营业部简称 ?? '').trim() ? { brokerShortName: String(row.brokerShortName ?? row.营业部简称).trim() } : {}),
+    tradeDate,
+    symbol,
+    ...(name ? { name } : {}),
+    changePct: round(toNumber(row.changePct ?? row.涨跌幅), 2),
+    buyAmount: Math.round(toNumber(row.buyAmount ?? row.买入金额)),
+    sellAmount: Math.round(toNumber(row.sellAmount ?? row.卖出金额)),
+    netAmount: Math.round(toNumber(row.netAmount ?? row.净额)),
+    ...(String(row.listingReason ?? row.上榜原因 ?? '').trim() ? { listingReason: String(row.listingReason ?? row.上榜原因).trim() } : {}),
+    ...optionalNumber('after1DayReturn', row.after1DayReturn ?? row['1日后涨跌幅']),
+    ...optionalNumber('after2DayReturn', row.after2DayReturn ?? row['2日后涨跌幅']),
+    ...optionalNumber('after3DayReturn', row.after3DayReturn ?? row['3日后涨跌幅']),
+    ...optionalNumber('after5DayReturn', row.after5DayReturn ?? row['5日后涨跌幅']),
+    ...optionalNumber('after10DayReturn', row.after10DayReturn ?? row['10日后涨跌幅']),
+    ...optionalNumber('after20DayReturn', row.after20DayReturn ?? row['20日后涨跌幅']),
+    ...optionalNumber('after30DayReturn', row.after30DayReturn ?? row['30日后涨跌幅']),
+    source: buildSource(tradeDate),
   }
 }
 
@@ -302,6 +619,9 @@ function normalizeTimestamp(value: unknown): string {
   if (/^\d{8}$/.test(raw)) {
     return new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T04:00:00.000Z`).toISOString()
   }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)) {
+    return new Date(`${raw.replace(' ', 'T')}+08:00`).toISOString()
+  }
   const parsed = new Date(raw)
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString()
 }
@@ -360,4 +680,36 @@ function toNumber(value: unknown): number {
 function round(value: number, digits: number): number {
   const scale = 10 ** digits
   return Math.round(value * scale) / scale
+}
+
+function normalizeSeatType(value: unknown): DragonTigerSeat['seatType'] {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'institution' || raw === 'broker' || raw === 'northbound' || raw === 'unknown') {
+    return raw
+  }
+  return 'unknown'
+}
+
+function optionalNumber<T extends string>(key: T, value: unknown): Partial<Record<T, number>> {
+  const parsed = toNumber(value)
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return {}
+  }
+  return {
+    [key]: round(parsed, 2),
+  } as Partial<Record<T, number>>
+}
+
+function optionalInteger<T extends string>(key: T, value: unknown): Partial<Record<T, number>> {
+  const parsed = toNumber(value)
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return {}
+  }
+  return {
+    [key]: Math.round(parsed),
+  } as Partial<Record<T, number>>
+}
+
+function normalizeDateKey(value: string): string {
+  return value.slice(0, 10).replace(/\D/g, '') || value.replace(/\W/g, '')
 }

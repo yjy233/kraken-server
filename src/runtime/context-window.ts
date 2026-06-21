@@ -133,7 +133,7 @@ function buildCompressedContext(params: {
   summaryBudgetTokens: number
 }): ContextPreparationResult {
   const split = splitByRecentUserTurns(params.messages, params.keepRecentTurns)
-  const summaryText = buildSummaryText(split.older, params.summaryBudgetTokens)
+  const summaryText = buildContextSummaryText(split.older, params.summaryBudgetTokens)
   const compressedMessages: AgentMessage[] = []
 
   if (summaryText) {
@@ -231,7 +231,7 @@ function splitByRecentUserTurns(messages: HistoryMessage[], keepTurns: number): 
   }
 }
 
-function buildSummaryText(messages: HistoryMessage[], targetTokens: number): string {
+export function buildContextSummaryText(messages: HistoryMessage[], targetTokens: number): string {
   if (messages.length === 0) {
     return ''
   }

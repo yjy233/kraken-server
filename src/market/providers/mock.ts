@@ -1,5 +1,10 @@
 import crypto from 'node:crypto'
 import type {
+  DragonTigerBrokerTrade,
+  DragonTigerDailyStock,
+  DragonTigerInstitutionSeat,
+  DragonTigerSeat,
+  DragonTigerStock,
   InfluencerPost,
   MarketBar,
   MarketNarrative,
@@ -86,14 +91,34 @@ export function createMockMarketProvider(): MarketProvider {
   }
 
   async function getBars(symbol: string, timeframe: MarketBar['timeframe'], limit: number): Promise<MarketBar[]> {
-    if (timeframe !== '1d') {
-      throw new Error('only 1d bars are available in mock provider')
+    if (!isSupportedBarTimeframe(timeframe)) {
+      throw new Error('only 1m, 5m, 15m, 30m, 60m, 1d, 1mo, and 1y bars are available in mock provider')
     }
     return buildBars(symbol, timeframe, limit)
   }
 
   async function getHotSectors(): Promise<SectorHeat[]> {
     return buildSectorHeat()
+  }
+
+  async function getDragonTigerStocks(): Promise<DragonTigerStock[]> {
+    return buildDragonTigerStocks()
+  }
+
+  async function getDragonTigerDailyStocks(): Promise<DragonTigerDailyStock[]> {
+    return buildDragonTigerDailyStocks()
+  }
+
+  async function getDragonTigerSeats(symbol: string, tradeDate?: string): Promise<DragonTigerSeat[]> {
+    return buildDragonTigerSeats(symbol, tradeDate)
+  }
+
+  async function getDragonTigerInstitutions(): Promise<DragonTigerInstitutionSeat[]> {
+    return buildDragonTigerInstitutions()
+  }
+
+  async function getDragonTigerBrokerTrades(brokerName: string, tradeDate?: string): Promise<DragonTigerBrokerTrade[]> {
+    return buildDragonTigerBrokerTrades(brokerName, tradeDate)
   }
 
   async function getNarratives(): Promise<MarketNarrative[]> {
@@ -110,6 +135,11 @@ export function createMockMarketProvider(): MarketProvider {
     getQuotes,
     getBars,
     getHotSectors,
+    getDragonTigerStocks,
+    getDragonTigerDailyStocks,
+    getDragonTigerSeats,
+    getDragonTigerInstitutions,
+    getDragonTigerBrokerTrades,
     getNarratives,
     getInfluencerPosts,
   }
@@ -121,18 +151,21 @@ function buildBars(symbol: string, timeframe: MarketBar['timeframe'] = '1d', lim
   const count = Math.max(30, Math.min(240, Math.round(limit)))
   const bars: MarketBar[] = []
   let close = basePrice * (0.88 + seededUnit(`${normalized}:bar-start`) * 0.2)
-  const todayNoon = getShanghaiNoonUtc(new Date())
+  const endDate = getShanghaiNoonUtc(new Date())
+  const stepMs = getBarStepMs(timeframe)
 
   for (let index = count - 1; index >= 0; index -= 1) {
     const dayIndex = count - 1 - index
-    const ts = new Date(todayNoon.getTime() - index * 24 * 60 * 60 * 1000).toISOString()
+    const ts = new Date(endDate.getTime() - index * stepMs).toISOString()
     const drift = sectorBias(normalized) / 1000
-    const wave = Math.sin(dayIndex / 7 + seededUnit(`${normalized}:wave`) * Math.PI * 2) * 0.014
-    const noise = (seededUnit(`${normalized}:${dayIndex}:noise`) - 0.5) * 0.028
-    const open = close * (1 + (seededUnit(`${normalized}:${dayIndex}:open`) - 0.5) * 0.012)
+    const frequency = isMinuteTimeframe(timeframe) ? 17 : timeframe === '1y' ? 11 : 7
+    const wave = Math.sin(dayIndex / frequency + seededUnit(`${normalized}:wave`) * Math.PI * 2) * (isMinuteTimeframe(timeframe) ? 0.004 : 0.014)
+    const noiseScale = isMinuteTimeframe(timeframe) ? 0.010 : 0.028
+    const open = close * (1 + (seededUnit(`${normalized}:${dayIndex}:open`) - 0.5) * (isMinuteTimeframe(timeframe) ? 0.004 : 0.012))
+    const noise = (seededUnit(`${normalized}:${dayIndex}:noise`) - 0.5) * noiseScale
     close = Math.max(0.01, close * (1 + drift + wave + noise))
-    const high = Math.max(open, close) * (1 + 0.006 + seededUnit(`${normalized}:${dayIndex}:high`) * 0.018)
-    const low = Math.min(open, close) * (1 - 0.006 - seededUnit(`${normalized}:${dayIndex}:low`) * 0.018)
+    const high = Math.max(open, close) * (1 + (isMinuteTimeframe(timeframe) ? 0.0015 : 0.006) + seededUnit(`${normalized}:${dayIndex}:high`) * (isMinuteTimeframe(timeframe) ? 0.004 : 0.018))
+    const low = Math.min(open, close) * (1 - (isMinuteTimeframe(timeframe) ? 0.0015 : 0.006) - seededUnit(`${normalized}:${dayIndex}:low`) * (isMinuteTimeframe(timeframe) ? 0.004 : 0.018))
     const volume = Math.round((24_000_000 + seededUnit(`${normalized}:${dayIndex}:volume`) * 120_000_000) * (1 + Math.abs(close - open) / Math.max(1, open) * 8))
     bars.push({
       symbol: normalized,
@@ -161,6 +194,10 @@ function buildBars(symbol: string, timeframe: MarketBar['timeframe'] = '1d', lim
   }
 
   return bars
+}
+
+function isSupportedBarTimeframe(timeframe: MarketBar['timeframe']): boolean {
+  return timeframe === '1m' || timeframe === '5m' || timeframe === '15m' || timeframe === '30m' || timeframe === '60m' || timeframe === '1d' || timeframe === '1mo' || timeframe === '1y'
 }
 
 function buildQuotes(symbols: string[]): QuoteSnapshot[] {
@@ -235,6 +272,204 @@ function buildSectorHeat(): SectorHeat[] {
       riskScore,
     }
   }).sort((left, right) => right.strengthScore - left.strengthScore)
+}
+
+function buildDragonTigerStocks(): DragonTigerStock[] {
+  const now = new Date().toISOString()
+  const seeds = [
+    { symbol: '300308.SZ', daysAgo: 1, listingCount: 6, interpretation: '机构与游资共振，成功率偏高', reason: '日涨幅偏离值达到7%的前5只证券' },
+    { symbol: '603986.SH', daysAgo: 2, listingCount: 5, interpretation: '主线热点反复活跃', reason: '连续三个交易日内，涨幅偏离值累计达到20%的证券' },
+    { symbol: '300124.SZ', daysAgo: 3, listingCount: 4, interpretation: '短线资金回流，榜单活跃', reason: '日换手率达到20%的前5只证券' },
+    { symbol: '002594.SZ', daysAgo: 5, listingCount: 3, interpretation: '大成交异动，需要跟踪延续性', reason: '日价格振幅达到15%的前5只证券' },
+  ]
+  return seeds.map((item, index) => {
+    const quote = buildQuote(item.symbol)
+    const latestListedAt = new Date(Date.now() - item.daysAgo * 24 * 60 * 60 * 1000).toISOString()
+    const buyAmount = Math.round(120_000_000 + seededUnit(`${item.symbol}:lhb:buy`) * 680_000_000)
+    const sellAmount = Math.round(90_000_000 + seededUnit(`${item.symbol}:lhb:sell`) * 560_000_000)
+    const netBuyAmount = buyAmount - sellAmount
+    const totalAmount = buyAmount + sellAmount
+    const institutionBuyCount = Math.round(1 + seededUnit(`${item.symbol}:lhb:ib`) * 6)
+    const institutionSellCount = Math.round(1 + seededUnit(`${item.symbol}:lhb:is`) * 5)
+    const institutionNetBuyAmount = Math.round(netBuyAmount * (0.35 + seededUnit(`${item.symbol}:lhb:inb`) * 0.4))
+    return {
+      id: `mock-lhb-${index + 1}`,
+      symbol: item.symbol,
+      ...(quote.name ? { name: quote.name } : {}),
+      latestListedAt,
+      closePrice: quote.price,
+      changePct: quote.changePct,
+      listingCount: item.listingCount,
+      netBuyAmount,
+      buyAmount,
+      sellAmount,
+      totalAmount,
+      institutionBuyCount,
+      institutionSellCount,
+      institutionNetBuyAmount,
+      interpretation: item.interpretation,
+      listingReason: item.reason,
+      after1DayReturn: round((seededUnit(`${item.symbol}:lhb:r1`) - 0.4) * 12, 2),
+      after2DayReturn: round((seededUnit(`${item.symbol}:lhb:r2`) - 0.4) * 18, 2),
+      after5DayReturn: round((seededUnit(`${item.symbol}:lhb:r5`) - 0.38) * 26, 2),
+      after10DayReturn: round((seededUnit(`${item.symbol}:lhb:r10`) - 0.38) * 34, 2),
+      source: buildSource(now, 'Mock 龙虎榜'),
+    }
+  }).sort((left, right) => right.listingCount - left.listingCount || right.netBuyAmount - left.netBuyAmount)
+}
+
+function buildDragonTigerDailyStocks(): DragonTigerDailyStock[] {
+  const stocks = buildDragonTigerStocks()
+  return stocks.flatMap((stock, index) => {
+    return [0, 1].map((offset) => {
+      const tradeDate = new Date(Date.now() - (index + offset + 1) * 24 * 60 * 60 * 1000).toISOString()
+      const buyAmount = Math.max(1, Math.round(stock.buyAmount * (0.42 + seededUnit(`${stock.symbol}:daily:${offset}:buy`) * 0.35)))
+      const sellAmount = Math.max(1, Math.round(stock.sellAmount * (0.42 + seededUnit(`${stock.symbol}:daily:${offset}:sell`) * 0.35)))
+      const totalAmount = buyAmount + sellAmount
+      const marketAmount = Math.round(totalAmount * (2.2 + seededUnit(`${stock.symbol}:daily:${offset}:market`) * 3.8))
+      return {
+        id: `mock-lhb-daily-${stock.symbol}-${offset}`,
+        tradeDate,
+        symbol: stock.symbol,
+        ...(stock.name ? { name: stock.name } : {}),
+        closePrice: stock.closePrice,
+        changePct: stock.changePct,
+        netBuyAmount: buyAmount - sellAmount,
+        buyAmount,
+        sellAmount,
+        totalAmount,
+        marketAmount,
+        netBuyRatio: marketAmount ? round((buyAmount - sellAmount) / marketAmount * 100, 2) : 0,
+        turnoverAmountRatio: marketAmount ? round(totalAmount / marketAmount * 100, 2) : 0,
+        turnoverRate: round(4 + seededUnit(`${stock.symbol}:daily:${offset}:turnover`) * 32, 2),
+        floatMarketCap: Math.round(marketAmount * (8 + seededUnit(`${stock.symbol}:daily:${offset}:cap`) * 18)),
+        ...(stock.interpretation ? { interpretation: stock.interpretation } : {}),
+        ...(stock.listingReason ? { listingReason: stock.listingReason } : {}),
+        ...(typeof stock.after1DayReturn === 'number' ? { after1DayReturn: stock.after1DayReturn } : {}),
+        ...(typeof stock.after2DayReturn === 'number' ? { after2DayReturn: stock.after2DayReturn } : {}),
+        ...(typeof stock.after5DayReturn === 'number' ? { after5DayReturn: stock.after5DayReturn } : {}),
+        ...(typeof stock.after10DayReturn === 'number' ? { after10DayReturn: stock.after10DayReturn } : {}),
+        source: buildSource(tradeDate, 'Mock 龙虎榜每日明细'),
+      }
+    })
+  }).sort((left, right) => right.tradeDate.localeCompare(left.tradeDate) || Math.abs(right.netBuyAmount) - Math.abs(left.netBuyAmount))
+}
+
+function buildDragonTigerSeats(symbol: string, tradeDate?: string): DragonTigerSeat[] {
+  const normalized = normalizeSymbol(symbol)
+  const stock = buildDragonTigerStocks().find((item) => item.symbol === normalized)
+  const date = tradeDate || stock?.latestListedAt || new Date().toISOString()
+  const names = [
+    '机构专用',
+    '深股通专用',
+    '东方财富证券股份有限公司拉萨团结路第一证券营业部',
+    '国泰君安证券股份有限公司上海江苏路证券营业部',
+    '华鑫证券有限责任公司上海分公司',
+  ]
+  return names.flatMap((brokerName, index) => {
+    return (['buy', 'sell'] as const).map((side) => {
+      const base = 8_000_000 + seededUnit(`${normalized}:${brokerName}:${side}:base`) * 88_000_000
+      const buyAmount = side === 'buy' ? base : base * seededUnit(`${normalized}:${brokerName}:cross-buy`)
+      const sellAmount = side === 'sell' ? base : base * seededUnit(`${normalized}:${brokerName}:cross-sell`)
+      return {
+        id: `mock-lhb-seat-${normalized}-${side}-${index + 1}`,
+        symbol: normalized,
+        tradeDate: date,
+        side,
+        rank: index + 1,
+        brokerName,
+        buyAmount: Math.round(buyAmount),
+        buyAmountRatio: round(seededUnit(`${normalized}:${brokerName}:${side}:br`) * 6, 2),
+        sellAmount: Math.round(sellAmount),
+        sellAmountRatio: round(seededUnit(`${normalized}:${brokerName}:${side}:sr`) * 6, 2),
+        netAmount: Math.round(buyAmount - sellAmount),
+        seatType: inferMockSeatType(brokerName),
+        ...(stock?.listingReason ? { reason: stock.listingReason } : {}),
+        source: buildSource(date, 'Mock 龙虎榜席位'),
+      }
+    })
+  })
+}
+
+function buildDragonTigerInstitutions(): DragonTigerInstitutionSeat[] {
+  return buildDragonTigerStocks().slice(0, 8).map((stock, index) => ({
+    id: `mock-lhb-institution-${index + 1}`,
+    symbol: stock.symbol,
+    ...(stock.name ? { name: stock.name } : {}),
+    closePrice: stock.closePrice,
+    changePct: stock.changePct,
+    totalAmount: stock.totalAmount,
+    listingCount: stock.listingCount,
+    institutionBuyAmount: Math.max(0, stock.institutionNetBuyAmount) + Math.round(stock.totalAmount * 0.06),
+    institutionBuyCount: stock.institutionBuyCount,
+    institutionSellAmount: Math.max(0, -stock.institutionNetBuyAmount) + Math.round(stock.totalAmount * 0.04),
+    institutionSellCount: stock.institutionSellCount,
+    institutionNetBuyAmount: stock.institutionNetBuyAmount,
+    oneMonthChangePct: round((seededUnit(`${stock.symbol}:institution:month`) - 0.35) * 90, 2),
+    source: buildSource(stock.latestListedAt, 'Mock 机构席位追踪'),
+  }))
+}
+
+function buildDragonTigerBrokerTrades(brokerName: string, tradeDate?: string): DragonTigerBrokerTrade[] {
+  const normalizedBrokerName = brokerName.trim() || '模拟营业部'
+  const stocks = buildDragonTigerStocks()
+  const fallbackStock = stocks[0] ?? {
+    id: 'mock-lhb-fallback',
+    symbol: '300308.SZ',
+    name: '中际旭创',
+    latestListedAt: new Date().toISOString(),
+    closePrice: 0,
+    changePct: 0,
+    listingCount: 0,
+    netBuyAmount: 0,
+    buyAmount: 0,
+    sellAmount: 0,
+    totalAmount: 0,
+    institutionBuyCount: 0,
+    institutionSellCount: 0,
+    institutionNetBuyAmount: 0,
+    source: buildSource(new Date().toISOString(), 'Mock 龙虎榜'),
+  }
+  const baseDate = tradeDate ? new Date(tradeDate) : new Date()
+  const anchor = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate
+  return Array.from({ length: 8 }).map((_, index) => {
+    const stock = stocks[index % stocks.length] ?? fallbackStock
+    const date = new Date(anchor.getTime() - index * 7 * 24 * 60 * 60 * 1000).toISOString()
+    const buyAmount = Math.round(2_000_000 + seededUnit(`${normalizedBrokerName}:${index}:buy`) * 80_000_000)
+    const sellAmount = Math.round(1_000_000 + seededUnit(`${normalizedBrokerName}:${index}:sell`) * 70_000_000)
+    const after1DayReturn = round((seededUnit(`${normalizedBrokerName}:${index}:r1`) - 0.45) * 16, 2)
+    const after2DayReturn = round((seededUnit(`${normalizedBrokerName}:${index}:r2`) - 0.45) * 20, 2)
+    const after3DayReturn = round((seededUnit(`${normalizedBrokerName}:${index}:r3`) - 0.45) * 24, 2)
+    const after5DayReturn = round((seededUnit(`${normalizedBrokerName}:${index}:r5`) - 0.45) * 32, 2)
+    return {
+      id: `mock-lhb-broker-trade-${index + 1}`,
+      brokerCode: `mock-${Math.round(seededUnit(normalizedBrokerName) * 1_000_000)}`,
+      brokerName: normalizedBrokerName,
+      brokerShortName: normalizedBrokerName.replace(/证券股份有限公司|证券有限责任公司|股份有限公司|有限责任公司/g, ''),
+      tradeDate: date,
+      symbol: stock.symbol,
+      ...(stock.name ? { name: stock.name } : {}),
+      changePct: stock.changePct,
+      buyAmount,
+      sellAmount,
+      netAmount: buyAmount - sellAmount,
+      ...(stock.listingReason ? { listingReason: stock.listingReason } : {}),
+      after1DayReturn,
+      after2DayReturn,
+      after3DayReturn,
+      after5DayReturn,
+      after10DayReturn: round(after5DayReturn + (seededUnit(`${normalizedBrokerName}:${index}:r10`) - 0.5) * 18, 2),
+      after20DayReturn: round(after5DayReturn + (seededUnit(`${normalizedBrokerName}:${index}:r20`) - 0.5) * 28, 2),
+      after30DayReturn: round(after5DayReturn + (seededUnit(`${normalizedBrokerName}:${index}:r30`) - 0.5) * 36, 2),
+      source: buildSource(date, 'Mock 营业部战绩'),
+    }
+  })
+}
+
+function inferMockSeatType(name: string): DragonTigerSeat['seatType'] {
+  if (name.includes('机构')) return 'institution'
+  if (name.includes('股通')) return 'northbound'
+  return 'broker'
 }
 
 function buildNarratives(): MarketNarrative[] {
@@ -348,6 +583,35 @@ function getShanghaiNoonUtc(date: Date): Date {
     day: '2-digit',
   }).format(date)
   return new Date(`${formatted}T04:00:00.000Z`)
+}
+
+function getBarStepMs(timeframe: MarketBar['timeframe']): number {
+  if (timeframe === '1m') {
+    return 60_000
+  }
+  if (timeframe === '5m') {
+    return 5 * 60_000
+  }
+  if (timeframe === '15m') {
+    return 15 * 60_000
+  }
+  if (timeframe === '30m') {
+    return 30 * 60_000
+  }
+  if (timeframe === '60m') {
+    return 60 * 60_000
+  }
+  if (timeframe === '1y') {
+    return 365 * 24 * 60 * 60_000
+  }
+  if (timeframe === '1mo') {
+    return 30 * 24 * 60 * 60_000
+  }
+  return 24 * 60 * 60_000
+}
+
+function isMinuteTimeframe(timeframe: MarketBar['timeframe']): boolean {
+  return timeframe === '1m' || timeframe === '5m' || timeframe === '15m' || timeframe === '30m' || timeframe === '60m'
 }
 
 function buildSource(fetchedAt: string, sourceName = 'Mock Market Feed'): MarketSourceRef {

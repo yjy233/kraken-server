@@ -1,4 +1,9 @@
 import type {
+  DragonTigerBrokerTrade,
+  DragonTigerDailyStock,
+  DragonTigerInstitutionSeat,
+  DragonTigerSeat,
+  DragonTigerStock,
   InfluencerPost,
   MarketBar,
   MarketNarrative,
@@ -28,6 +33,11 @@ export interface MarketProvider {
   getQuotes(symbols: string[]): Promise<QuoteSnapshot[]>
   getBars(symbol: string, timeframe: MarketBar['timeframe'], limit: number): Promise<MarketBar[]>
   getHotSectors(): Promise<SectorHeat[]>
+  getDragonTigerStocks(): Promise<DragonTigerStock[]>
+  getDragonTigerDailyStocks(): Promise<DragonTigerDailyStock[]>
+  getDragonTigerSeats(symbol: string, tradeDate?: string): Promise<DragonTigerSeat[]>
+  getDragonTigerInstitutions(): Promise<DragonTigerInstitutionSeat[]>
+  getDragonTigerBrokerTrades(brokerName: string, tradeDate?: string): Promise<DragonTigerBrokerTrade[]>
   getNarratives(): Promise<MarketNarrative[]>
   getInfluencerPosts(): Promise<InfluencerPost[]>
 }

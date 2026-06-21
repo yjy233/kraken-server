@@ -1,5 +1,12 @@
 import crypto from 'node:crypto'
 import type {
+  DragonTigerBrokerTrade,
+  DragonTigerDailyStock,
+  DragonTigerInstitutionSeat,
+  DragonTigerSeat,
+  DragonTigerStock,
+  HotStockSignal,
+  HotStockSourceStatus,
   InfluencerPost,
   MarketAlert,
   MarketBar,
@@ -19,13 +26,20 @@ import { buildTechnicalSignalFromBars } from './indicators.js'
 import type { MarketProvider } from './providers/types.js'
 
 type MarketStore = ReturnType<typeof createMarketStore>
+type HotStockCollector = {
+  getHotStocks(symbols: MarketSymbol[]): Promise<{
+    hotStocks: HotStockSignal[]
+    status: HotStockSourceStatus
+  }>
+}
 
 export function createMarketService(options: {
   store: MarketStore
   provider: MarketProvider
   enabled: boolean
+  hotStockCollector?: HotStockCollector
 }) {
-  const { store, provider, enabled } = options
+  const { store, provider, enabled, hotStockCollector } = options
 
   async function getStatus(): Promise<MarketStatus> {
     const now = new Date()
@@ -45,34 +59,39 @@ export function createMarketService(options: {
   }
 
   async function getOverview(): Promise<MarketOverview> {
-    const [status, watchlist, providerSymbols] = await Promise.all([
+    const [status, watchlist] = await Promise.all([
       getStatus(),
       store.getWatchlist(),
-      provider.getSymbols(),
     ])
+    const indexSymbols = ['000001.SH', '399001.SZ', '399006.SZ']
     const watchlistSymbols = normalizeSymbols(watchlist.symbols)
-    const [indices, quotes, sectors, narratives, influencerPosts] = await Promise.all([
-      provider.getQuotes(['000001.SH', '399001.SZ', '399006.SZ']),
-      provider.getQuotes(watchlistSymbols),
-      provider.getHotSectors(),
-      provider.getNarratives(),
-      provider.getInfluencerPosts(),
-    ])
-    const alerts = buildAlerts(quotes, sectors, narratives, influencerPosts, providerSymbols)
-    const technicals = await Promise.all(
-      quotes.slice(0, 6).map((quote) => buildTechnicalSignal(quote.symbol))
-    )
+    let allQuotes: QuoteSnapshot[] = []
+    let providerAlerts: MarketAlert[] = []
+    try {
+      allQuotes = await provider.getQuotes(normalizeSymbols([...indexSymbols, ...watchlistSymbols]))
+    } catch (error) {
+      providerAlerts = [buildProviderErrorAlert(error)]
+    }
+    const indices = selectQuotesInOrder(allQuotes, indexSymbols)
+    const quotes = selectQuotesInOrder(allQuotes, watchlistSymbols)
 
     return {
       status,
       indices,
       watchlist,
       quotes,
-      sectors,
-      narratives,
-      influencerPosts,
-      alerts,
-      technicals,
+      sectors: [],
+      narratives: [],
+      influencerPosts: [],
+      alerts: [
+        ...providerAlerts,
+        ...buildAlerts(quotes, [], [], [], []),
+      ],
+      technicals: [],
+      hotStocks: [],
+      hotStockQuotes: [],
+      hotStockStatus: buildDeferredHotStockStatus(),
+      dragonTigerStocks: [],
     }
   }
 
@@ -112,12 +131,50 @@ export function createMarketService(options: {
     return provider.getHotSectors()
   }
 
-  async function getTechnicals(symbol: string) {
+  async function getHotStocks() {
+    const symbols = await provider.getSymbols()
+    const hotStockResult = await getHotStockResult(symbols)
+    const hotStockQuotes = await getHotStockQuotes(hotStockResult.hotStocks, [])
+    return {
+      ...hotStockResult,
+      quotes: hotStockQuotes,
+    }
+  }
+
+  async function getDragonTigerStocks(): Promise<DragonTigerStock[]> {
+    return provider.getDragonTigerStocks()
+  }
+
+  async function getDragonTigerDailyStocks(): Promise<DragonTigerDailyStock[]> {
+    return provider.getDragonTigerDailyStocks()
+  }
+
+  async function getDragonTigerSeats(symbol: string, tradeDate?: string): Promise<DragonTigerSeat[]> {
     const normalized = normalizeSymbol(symbol)
     if (!normalized) {
       throw new Error('symbol is required')
     }
-    return buildTechnicalSignal(normalized)
+    return provider.getDragonTigerSeats(normalized, tradeDate)
+  }
+
+  async function getDragonTigerInstitutions(): Promise<DragonTigerInstitutionSeat[]> {
+    return provider.getDragonTigerInstitutions()
+  }
+
+  async function getDragonTigerBrokerTrades(brokerName: string, tradeDate?: string): Promise<DragonTigerBrokerTrade[]> {
+    const normalizedBrokerName = brokerName.trim()
+    if (!normalizedBrokerName) {
+      throw new Error('brokerName is required')
+    }
+    return provider.getDragonTigerBrokerTrades(normalizedBrokerName, tradeDate)
+  }
+
+  async function getTechnicals(symbol: string, timeframe: MarketBar['timeframe'] = '1d') {
+    const normalized = normalizeSymbol(symbol)
+    if (!normalized) {
+      throw new Error('symbol is required')
+    }
+    return buildTechnicalSignal(normalized, timeframe)
   }
 
   async function getBars(symbol: string, timeframe: MarketBar['timeframe'] = '1d', limit = 90) {
@@ -185,18 +242,64 @@ export function createMarketService(options: {
   }
 
   async function getAlerts() {
-    const overview = await getOverview()
-    return overview.alerts
+    const [watchlist, providerSymbols] = await Promise.all([
+      store.getWatchlist(),
+      provider.getSymbols(),
+    ])
+    const watchlistSymbols = normalizeSymbols(watchlist.symbols)
+    const [quotes, sectors, narratives, influencerPosts] = await Promise.all([
+      provider.getQuotes(watchlistSymbols),
+      provider.getHotSectors(),
+      provider.getNarratives(),
+      provider.getInfluencerPosts(),
+    ])
+    return buildAlerts(quotes, sectors, narratives, influencerPosts, providerSymbols)
   }
 
   async function runReport(kind: MarketReport['kind'] = 'intraday'): Promise<MarketReport> {
-    const overview = await getOverview()
+    const overview = await getReportOverview()
     return buildMarketReport(kind, overview)
   }
 
-  async function buildTechnicalSignal(symbol: string): Promise<TechnicalSignal> {
+  async function getReportOverview(): Promise<MarketOverview> {
+    const [status, watchlist, providerSymbols] = await Promise.all([
+      getStatus(),
+      store.getWatchlist(),
+      provider.getSymbols(),
+    ])
+    const watchlistSymbols = normalizeSymbols(watchlist.symbols)
+    const [indices, quotes, sectors, narratives, influencerPosts] = await Promise.all([
+      provider.getQuotes(['000001.SH', '399001.SZ', '399006.SZ']),
+      provider.getQuotes(watchlistSymbols),
+      provider.getHotSectors(),
+      provider.getNarratives(),
+      provider.getInfluencerPosts(),
+    ])
+    const alerts = buildAlerts(quotes, sectors, narratives, influencerPosts, providerSymbols)
+    const technicals = await Promise.all(
+      quotes.slice(0, 6).map((quote) => buildTechnicalSignal(quote.symbol))
+    )
+
+    return {
+      status,
+      indices,
+      watchlist,
+      quotes,
+      sectors,
+      narratives,
+      influencerPosts,
+      alerts,
+      technicals,
+      hotStocks: [],
+      hotStockQuotes: [],
+      hotStockStatus: buildDeferredHotStockStatus(),
+      dragonTigerStocks: [],
+    }
+  }
+
+  async function buildTechnicalSignal(symbol: string, timeframe: MarketBar['timeframe'] = '1d'): Promise<TechnicalSignal> {
     const normalized = normalizeSymbol(symbol)
-    const bars = await provider.getBars(normalized, '1d', 90)
+    const bars = await provider.getBars(normalized, timeframe, getTechnicalBarLimit(timeframe))
     return buildTechnicalSignalFromBars(normalized, bars)
   }
 
@@ -209,6 +312,12 @@ export function createMarketService(options: {
     removeWatchlistSymbol,
     replaceWatchlistSymbols,
     getHotSectors,
+    getHotStocks,
+    getDragonTigerStocks,
+    getDragonTigerDailyStocks,
+    getDragonTigerSeats,
+    getDragonTigerInstitutions,
+    getDragonTigerBrokerTrades,
     getTechnicals,
     getBars,
     getNarratives,
@@ -217,6 +326,69 @@ export function createMarketService(options: {
     getAlerts,
     runReport,
   }
+
+  async function getHotStockResult(symbols: MarketSymbol[]): Promise<{
+    hotStocks: HotStockSignal[]
+    status: HotStockSourceStatus
+  }> {
+    if (!hotStockCollector) {
+      return {
+        hotStocks: [],
+        status: {
+          enabled: false,
+          provider: 'none',
+          providerLabel: '外部热门股票源',
+          mode: 'disabled',
+          sourceUrls: [],
+          message: '外部热门股票采集未配置。',
+        },
+      }
+    }
+    return hotStockCollector.getHotStocks(symbols)
+  }
+
+  async function getHotStockQuotes(hotStocks: HotStockSignal[], existingQuotes: QuoteSnapshot[]): Promise<QuoteSnapshot[]> {
+    return getExternalStockQuotes(hotStocks.map((item) => item.symbol), existingQuotes)
+  }
+
+  async function getExternalStockQuotes(targetSymbols: string[], existingQuotes: QuoteSnapshot[]): Promise<QuoteSnapshot[]> {
+    const existingSymbols = new Set(existingQuotes.map((quote) => quote.symbol))
+    const symbols = normalizeSymbols(targetSymbols)
+      .filter((symbol) => !existingSymbols.has(symbol))
+    if (symbols.length === 0) {
+      return []
+    }
+    try {
+      return await provider.getQuotes(symbols)
+    } catch {
+      return []
+    }
+  }
+}
+
+function getTechnicalBarLimit(timeframe: MarketBar['timeframe']): number {
+  if (timeframe === '1m') {
+    return 240
+  }
+  if (timeframe === '5m') {
+    return 180
+  }
+  if (timeframe === '15m') {
+    return 180
+  }
+  if (timeframe === '30m') {
+    return 120
+  }
+  if (timeframe === '60m') {
+    return 120
+  }
+  if (timeframe === '1y') {
+    return 40
+  }
+  if (timeframe === '1mo') {
+    return 120
+  }
+  return 90
 }
 
 function buildMarketReport(kind: MarketReport['kind'], overview: MarketOverview): MarketReport {
@@ -480,6 +652,31 @@ function formatQuoteLabel(quote: QuoteSnapshot, symbols: MarketSymbol[] = []): s
   return name && name !== quote.symbol ? `${name}（${quote.symbol}）` : quote.symbol
 }
 
+function selectQuotesInOrder(quotes: QuoteSnapshot[], symbols: string[]): QuoteSnapshot[] {
+  const quoteBySymbol = new Map(quotes.map((quote) => [quote.symbol, quote]))
+  return normalizeSymbols(symbols)
+    .map((symbol) => quoteBySymbol.get(symbol))
+    .filter(Boolean) as QuoteSnapshot[]
+}
+
+function buildProviderErrorAlert(error: unknown): MarketAlert {
+  const message = error instanceof Error ? error.message : String(error)
+  const triggeredAt = new Date().toISOString()
+  return {
+    id: `market-provider-error-${Math.floor(Date.now() / 60_000)}`,
+    level: 'watch',
+    title: '行情数据加载失败',
+    message: `当前行情 provider 返回失败：${message}`,
+    symbols: [],
+    sectors: [],
+    triggeredAt,
+    ruleId: 'market-provider-error',
+    sourceEventIds: ['market-provider'],
+    status: 'new',
+    aiRationale: '这不是 mock 数据；请检查 AKShare HTTP bridge 是否启动、网络是否可达，或稍后重试。',
+  }
+}
+
 function getSymbolSectors(symbol: string, symbols: MarketSymbol[]): string[] {
   return symbols.find((item) => item.symbol === symbol)?.sectorIds || []
 }
@@ -529,4 +726,15 @@ function formatAmount(value: number): string {
     return `${round(value / 10_000, 1)} 万`
   }
   return String(value)
+}
+
+function buildDeferredHotStockStatus(): HotStockSourceStatus {
+  return {
+    enabled: false,
+    provider: 'deferred',
+    providerLabel: '外部热门股票源',
+    mode: 'disabled',
+    sourceUrls: [],
+    message: '进入“热门股票”页后再加载。',
+  }
 }
